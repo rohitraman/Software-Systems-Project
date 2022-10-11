@@ -15,7 +15,7 @@
 #include "./customer_struct.h"
 #include "./transaction.h"
 #include "./admin-credentials.h"
-#include "./server-constants.h"
+#include "./constants.h"
 
 // Function Prototypes =================================
 

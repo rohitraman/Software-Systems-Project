@@ -11,7 +11,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 
-#include "./server-constants.h"
+#include "./constants.h"
 #include "./admin.h"
 #include "./customer.h"
 
@@ -62,7 +62,6 @@ void main()
                     customer_operation_handler(nsd);
                     break;
                 default:
-                    // Exit
                     break;
                 }
 
