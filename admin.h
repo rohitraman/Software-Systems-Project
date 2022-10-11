@@ -24,10 +24,10 @@ int adminLoginHandler(int connFD) {
             int opt = atoi(inputBuffer);
             switch (opt) {
             case 1:
-                get_customer_details(connFD, -1);
+                getCustomerDetails(connFD, -1);
                 break;
             case 2:
-                get_account_details(connFD, NULL);
+                getAccountDetails(connFD, NULL);
                 break;
             case 3:
                 addAccount(connFD);

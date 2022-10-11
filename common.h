@@ -20,8 +20,8 @@
 // Function Prototypes =================================
 
 int loginHandler(int isAdmin, int connFD, struct Customer *ptrToCustomer);
-bool get_account_details(int connFD, struct Account *customerAccount);
-bool get_customer_details(int connFD, int customerID);
+bool getAccountDetails(int connFD, struct Account *customerAccount);
+bool getCustomerDetails(int connFD, int customerID);
 
 // =====================================================
 
@@ -164,7 +164,7 @@ int loginHandler(int isAdmin, int connFD, struct Customer *ptrToCustomerID)
     return 0;
 }
 
-bool get_account_details(int connFD, struct Account *customerAccount)
+bool getAccountDetails(int connFD, struct Account *customerAccount)
 {
     ssize_t readBytes, writeBytes;            // Number of bytes read from / written to the socket
     char readBuffer[1000], writeBuffer[1000]; // A buffer for reading from / writing to the socket
@@ -287,7 +287,7 @@ bool get_account_details(int connFD, struct Account *customerAccount)
     return true;
 }
 
-bool get_customer_details(int connFD, int customerID)
+bool getCustomerDetails(int connFD, int customerID)
 {
     ssize_t readBytes, writeBytes;             // Number of bytes read from / written to the socket
     char readBuffer[1000], writeBuffer[10000]; // A buffer for reading from / writing to the socket
@@ -390,7 +390,7 @@ bool get_customer_details(int connFD, int customerID)
     return true;
 }
 
-bool get_transaction_details(int connFD, int accountNumber)
+bool getTransactionDetails(int connFD, int accountNumber)
 {
 
     ssize_t readBytes, writeBytes;                               // Number of bytes read from / written to the socket
@@ -421,7 +421,7 @@ bool get_transaction_details(int connFD, int accountNumber)
     else
         account.accountNumber = accountNumber;
 
-    if (get_account_details(connFD, &account))
+    if (getAccountDetails(connFD, &account))
     {
         int iter;
 

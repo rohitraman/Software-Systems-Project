@@ -87,7 +87,7 @@ bool customer_operation_handler(int connFD)
             switch (choice)
             {
             case 1:
-                get_customer_details(connFD, loggedInCustomer.id);
+                getCustomerDetails(connFD, loggedInCustomer.id);
                 break;
             case 2:
                 deposit(connFD);
@@ -99,7 +99,7 @@ bool customer_operation_handler(int connFD)
                 get_balance(connFD);
                 break;
             case 5:
-                get_transaction_details(connFD, loggedInCustomer.account);
+                getTransactionDetails(connFD, loggedInCustomer.account);
                 break;
             case 6:
                 change_password(connFD);
@@ -132,7 +132,7 @@ bool deposit(int connFD)
     struct sembuf semOp;
     lock_critical_section(&semOp);
 
-    if (get_account_details(connFD, &account))
+    if (getAccountDetails(connFD, &account))
     {
         
         if (account.active)
@@ -227,7 +227,7 @@ bool withdraw(int connFD)
     struct sembuf semOp;
     lock_critical_section(&semOp);
 
-    if (get_account_details(connFD, &account))
+    if (getAccountDetails(connFD, &account))
     {
         if (account.active)
         {
@@ -313,7 +313,7 @@ bool get_balance(int connFD)
     char buffer[1000];
     struct Account account;
     account.accountNumber = loggedInCustomer.account;
-    if (get_account_details(connFD, &account))
+    if (getAccountDetails(connFD, &account))
     {
         bzero(buffer, sizeof(buffer));
         if (account.active)
