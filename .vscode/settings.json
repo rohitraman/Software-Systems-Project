@@ -1,0 +1,15 @@
+{
+    "files.associations": {
+        "common.h": "c",
+        "stdio.h": "c",
+        "account.h": "c",
+        "admin.h": "c",
+        "constants.h": "c",
+        "customer.h": "c",
+        "transaction.h": "c",
+        "admin-credentials.h": "c",
+        "customer_struct.h": "c",
+        "string.h": "c",
+        "server-constants.h": "c"
+    }
+}
