@@ -7,7 +7,7 @@ int semIdentifier;
 
 // Function Prototypes =================================
 
-bool customer_operation_handler(int connFD);
+bool customerLoginHandler(int connFD);
 bool deposit(int connFD);
 bool withdraw(int connFD);
 bool get_balance(int connFD);
@@ -21,7 +21,7 @@ int write_transaction_to_file(int accountNumber, long int oldBalance, long int n
 
 // Function Definition =================================
 
-bool customer_operation_handler(int connFD)
+bool customerLoginHandler(int connFD)
 {
     if (loginHandler(0, connFD, &loggedInCustomer) == 1)
     {
