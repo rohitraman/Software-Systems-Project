@@ -1,15 +1,12 @@
-#ifndef COMMON_FUNCTIONS
-#define COMMON_FUNCTIONS
-
-#include <stdio.h>     // Import for `printf` & `perror`
-#include <unistd.h>    // Import for `read`, `write & `lseek`
-#include <string.h>    // Import for string functions
-#include <stdbool.h>   // Import for `bool` data type
-#include <sys/types.h> // Import for `open`, `lseek`
-#include <sys/stat.h>  // Import for `open`
-#include <fcntl.h>     // Import for `open`
-#include <stdlib.h>    // Import for `atoi`
-#include <errno.h>     // Import for `errno`
+#include <stdio.h>
+#include <unistd.h>
+#include <string.h>
+#include <stdbool.h>
+#include <sys/types.h>
+#include <sys/stat.h> 
+#include <fcntl.h>
+#include <stdlib.h>
+#include <errno.h>
 
 #include "./account.h"
 #include "./customer_struct.h"
@@ -17,20 +14,12 @@
 #include "./admin-credentials.h"
 #include "./constants.h"
 
-// Function Prototypes =================================
-
 int loginHandler(int isAdmin, int connFD, struct Customer *ptrToCustomer);
 bool getAccountDetails(int connFD, struct Account *customerAccount);
 bool getCustomerDetails(int connFD, int customerID);
 
-// =====================================================
-
-// Function Definition =================================
-
-int loginHandler(int isAdmin, int connFD, struct Customer *ptrToCustomerID)
-{
-    ssize_t readBytes, writeBytes;            // Number of bytes written to / read from the socket
-    char readBuffer[1000], writeBuffer[1000]; // Buffer for reading from / writing to the client
+int loginHandler(int isAdmin, int connFD, struct Customer *ptrToCustomerID) {
+    char readBuffer[1000], writeBuffer[1000];
     char tempBuffer[1000];
     struct Customer customer;
 
@@ -39,29 +28,15 @@ int loginHandler(int isAdmin, int connFD, struct Customer *ptrToCustomerID)
     bzero(readBuffer, sizeof(readBuffer));
     bzero(writeBuffer, sizeof(writeBuffer));
 
-    // Get login message for respective user type
     if (isAdmin)
         strcpy(writeBuffer, ADMIN_LOGIN_SUCCESS);
     else
         strcpy(writeBuffer, CUSTOMER_LOGIN_WELCOME);
 
-    // Append the request for LOGIN ID message
     strcat(writeBuffer, "\n");
     strcat(writeBuffer, LOGIN_ID);
-
-    writeBytes = write(connFD, writeBuffer, strlen(writeBuffer));
-    if (writeBytes == -1)
-    {
-        perror("Error writing WELCOME & LOGIN_ID message to the client!");
-        return 0;
-    }
-
-    readBytes = read(connFD, readBuffer, sizeof(readBuffer));
-    if (readBytes == -1)
-    {
-        perror("Error reading login ID from client!");
-        return 0;
-    }
+    write(connFD, writeBuffer, strlen(writeBuffer));
+    read(connFD, readBuffer, sizeof(readBuffer));
 
     int userFound = 0;
 
@@ -78,87 +53,56 @@ int loginHandler(int isAdmin, int connFD, struct Customer *ptrToCustomerID)
         ID = atoi(strtok(NULL, "-"));
 
         int customerFileFD = open(CUSTOMER_FILE, O_RDONLY);
-        if (customerFileFD == -1)
-        {
+        if (customerFileFD == -1) {
             perror("Error opening customer file in read mode!");
             return 0;
         }
 
-        off_t offset = lseek(customerFileFD, ID * sizeof(struct Customer), SEEK_SET);
-        if (offset >= 0)
-        {
+        int offset = lseek(customerFileFD, ID * sizeof(struct Customer), SEEK_SET);
+        if (offset >= 0) {
             struct flock lock = {F_RDLCK, SEEK_SET, ID * sizeof(struct Customer), sizeof(struct Customer), getpid()};
-
-            int lockingStatus = fcntl(customerFileFD, F_SETLKW, &lock);
-            if (lockingStatus == -1)
-            {
-                perror("Error obtaining read lock on customer record!");
-                return 0;
-            }
-
-            readBytes = read(customerFileFD, &customer, sizeof(struct Customer));
-            if (readBytes == -1)
-            {
-                perror("Error reading customer record from file!");
-                return 0;
-            }
+            fcntl(customerFileFD, F_SETLKW, &lock);
+            read(customerFileFD, &customer, sizeof(struct Customer));
 
             lock.l_type = F_UNLCK;
             fcntl(customerFileFD, F_SETLK, &lock);
 
             if (strcmp(customer.login, readBuffer) == 0)
-                userFound = true;
-
+                userFound = 1;
             close(customerFileFD);
         }
-        else
-        {
-            writeBytes = write(connFD, CUSTOMER_LOGIN_ID_DOESNT_EXIT, strlen(CUSTOMER_LOGIN_ID_DOESNT_EXIT));
+        else {
+            write(connFD, CUSTOMER_LOGIN_ID_DOESNT_EXIT, strlen(CUSTOMER_LOGIN_ID_DOESNT_EXIT));
         }
     }
 
-    if (userFound == 1)
-    {
+    if (userFound == 1) {
         bzero(writeBuffer, sizeof(writeBuffer));
-        writeBytes = write(connFD, PASSWORD, strlen(PASSWORD));
-        if (writeBytes == -1)
-        {
-            perror("Error writing PASSWORD message to client!");
-            return 0;
-        }
+        write(connFD, PASSWORD, strlen(PASSWORD));
 
         bzero(readBuffer, sizeof(readBuffer));
-        readBytes = read(connFD, readBuffer, sizeof(readBuffer));
-        if (readBytes == 1)
-        {
-            perror("Error reading password from the client!");
-            return 0;
-        }
-
+        read(connFD, readBuffer, sizeof(readBuffer));
+    
         char hashedPassword[1000];
         strcpy(hashedPassword, crypt(readBuffer, SALT_BAE));
 
-        if (isAdmin == 1)
-        {
+        if (isAdmin == 1) {
             if (strcmp(hashedPassword, ADMIN_PASSWORD) == 0)
                 return 1;
         }
-        else
-        {
-            if (strcmp(hashedPassword, customer.password) == 0)
-            {
+        else {
+            if (strcmp(hashedPassword, customer.password) == 0) {
                 *ptrToCustomerID = customer;
                 return 1;
             }
         }
 
         bzero(writeBuffer, sizeof(writeBuffer));
-        writeBytes = write(connFD, INVALID_PASSWORD, strlen(INVALID_PASSWORD));
+        write(connFD, INVALID_PASSWORD, strlen(INVALID_PASSWORD));
     }
-    else
-    {
+    else {
         bzero(writeBuffer, sizeof(writeBuffer));
-        writeBytes = write(connFD, INVALID_LOGIN, strlen(INVALID_LOGIN));
+        write(connFD, INVALID_LOGIN, strlen(INVALID_LOGIN));
     }
 
     return 0;
@@ -495,6 +439,3 @@ bool getTransactionDetails(int connFD, int accountNumber)
         }
     }
 }
-// =====================================================
-
-#endif

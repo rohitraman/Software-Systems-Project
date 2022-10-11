@@ -1,6 +1,3 @@
-#ifndef CUSTOMER_FUNCTIONS
-#define CUSTOMER_FUNCTIONS
-
 // Semaphores are necessary joint account due the design choice I've made
 #include <sys/ipc.h>
 #include <sys/sem.h>
@@ -551,7 +548,3 @@ int write_transaction_to_file(int accountNumber, long int oldBalance, long int n
 
     return newTransaction.transactionID;
 }
-
-// =====================================================
-
-#endif

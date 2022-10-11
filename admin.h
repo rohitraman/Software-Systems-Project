@@ -119,6 +119,7 @@ int addAccount(int connFD) {
     return 1;
 }
 
+
 int deleteAccount(int connFD) {
     char inputBuffer[SIZE], outputBuffer[SIZE];
     struct Account acc;

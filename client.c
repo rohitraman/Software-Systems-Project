@@ -1,13 +1,12 @@
-#include <stdio.h>      // Import for `printf` & `perror` functions
-#include <errno.h>      // Import for `errno` variable
-#include <fcntl.h>      // Import for `fcntl` functions
-#include <unistd.h>     // Import for `fork`, `fcntl`, `read`, `write`, `lseek, `_exit` functions
-#include <sys/types.h>  // Import for `socket`, `bind`, `listen`, `connect`, `fork`, `lseek` functions
-#include <sys/socket.h> // Import for `socket`, `bind`, `listen`, `connect` functions
-#include <netinet/ip.h> // Import for `sockaddr_in` stucture
-#include <string.h>     // Import for string functions
+#include <stdio.h>
+#include <errno.h>
+#include <fcntl.h> 
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/ip.h>
+#include <string.h>
 
-void connection_handler(int sockFD); // Handles the read & write operations to the server
 
 void main()
 {
