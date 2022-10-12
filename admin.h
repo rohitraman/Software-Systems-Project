@@ -39,7 +39,7 @@ int adminLoginHandler(int connFD) {
                 modifyCustomerInfo(connFD);
                 break;
             default:
-                write(connFD, ADMIN_LOGOUT, strlen(ADMIN_LOGOUT));
+                write(connFD, ADMIN_LOGOUT_MESSAGE, strlen(ADMIN_LOGOUT_MESSAGE));
                 _exit(0);
             }
 
@@ -59,72 +59,68 @@ int addAccount(int connFD) {
 
     int accountFD = open(ACCOUNT_FILE, O_RDONLY);
     if (accountFD == -1 && errno == ENOENT) {
-        newAcc.accountNumber = 0;
-    }
-    else if (accountFD == -1) {
+        newAcc.accNo = 0;
+    } else if (accountFD == -1) {
         printf("Error while opening account file");
         return 0;
-    }
-    else {
+    } else {
         int offset = lseek(accountFD, -sizeof(struct Account), SEEK_END);
 
-        struct flock lock = {F_RDLCK, SEEK_SET, offset, sizeof(struct Account), getpid()};
+        struct flock lock;
+        lock.l_type = F_RDLCK;
+        lock.l_whence = SEEK_SET;
+        lock.l_start = offset;
+        lock.l_len = sizeof(struct Customer);
+        lock.l_pid = getpid();
+       
         fcntl(accountFD, F_SETLKW, &lock);
-
         read(accountFD, &prevAcc, sizeof(struct Account));
-
+       
         lock.l_type = F_UNLCK;
         fcntl(accountFD, F_SETLK, &lock);
-
         close(accountFD);
-
-        newAcc.accountNumber = prevAcc.accountNumber + 1;
+        newAcc.accNo = prevAcc.accNo + 1;
     }
-    write(connFD, ADMIN_ADD_ACCOUNT_TYPE, strlen(ADMIN_ADD_ACCOUNT_TYPE));
+    write(connFD, ADMIN_CREATE_ACCOUNT_TYPE, strlen(ADMIN_CREATE_ACCOUNT_TYPE));
     bzero(inputBuffer, sizeof(inputBuffer));
     read(connFD, &inputBuffer, sizeof(inputBuffer));
 
     newAcc.isRegularAccount = atoi(inputBuffer) == 1 ? 1 : 0;
 
-    newAcc.owners[0] = addCustomer(connFD, 1, newAcc.accountNumber);
+    newAcc.customers[0] = addCustomer(connFD, 1, newAcc.accNo);
 
     if (newAcc.isRegularAccount)
-        newAcc.owners[1] = -1;
+        newAcc.customers[1] = -1;
     else
-        newAcc.owners[1] = addCustomer(connFD, 0, newAcc.accountNumber);
+        newAcc.customers[1] = addCustomer(connFD, 0, newAcc.accNo);
 
     newAcc.active = 1;
     newAcc.balance = 0;
-
     memset(newAcc.transactions, -1, MAX_TRANSACTIONS * sizeof(int));
-
     accountFD = open(ACCOUNT_FILE, O_CREAT | O_APPEND | O_WRONLY, S_IRWXU);
     if (accountFD == -1) {
         printf("Error while creating / opening account file!");
         return 0;
     }
-
     writeBytes = write(accountFD, &newAcc, sizeof(struct Account));
     if (writeBytes == -1) {
         printf("Error while writing Account record to file!");
         return 0;
     }
-
     close(accountFD);
-
     bzero(outputBuffer, sizeof(outputBuffer));
-    sprintf(outputBuffer, "%s%d", ADMIN_ADD_ACCOUNT_NUMBER, newAcc.accountNumber);
+    sprintf(outputBuffer, "%s%d", ADMIN_CREATE_ACCOUNT_NUMBER, newAcc.accNo);
+    strcat(outputBuffer, "^");
     write(connFD, outputBuffer, sizeof(outputBuffer));
     read(connFD, inputBuffer, sizeof(read));
     return 1;
 }
 
-
 int deleteAccount(int connFD) {
     char inputBuffer[SIZE], outputBuffer[SIZE];
     struct Account acc;
 
-    write(connFD, ADMIN_DEL_ACCOUNT_NO, strlen(ADMIN_DEL_ACCOUNT_NO));
+    write(connFD, ADMIN_DELETED_ACCOUNT_NO, strlen(ADMIN_DELETED_ACCOUNT_NO));
     bzero(inputBuffer, sizeof(inputBuffer));
     read(connFD, inputBuffer, sizeof(inputBuffer));
 
@@ -144,15 +140,19 @@ int deleteAccount(int connFD) {
         bzero(outputBuffer, sizeof(outputBuffer));
         strcpy(outputBuffer, ACCOUNT_ID_DOESNT_EXIT);
         write(connFD, outputBuffer, strlen(outputBuffer));
-        read(connFD, inputBuffer, sizeof(inputBuffer)); // Dummy read
+        read(connFD, inputBuffer, sizeof(inputBuffer));
         return 0;
-    }
-    else if (offset == -1) {
+    } else if (offset == -1) {
         printf("Error while seeking to required account record!");
         return 0;
     }
 
-    struct flock lock = {F_RDLCK, SEEK_SET, offset, sizeof(struct Account), getpid()};
+    struct flock lock;
+    lock.l_type = F_RDLCK;
+    lock.l_whence = SEEK_SET;
+    lock.l_start = offset;
+    lock.l_len = sizeof(struct Customer);
+    lock.l_pid = getpid();
     fcntl(accountFD, F_SETLKW, &lock);
     read(accountFD, &acc, sizeof(struct Account));
 
@@ -162,9 +162,7 @@ int deleteAccount(int connFD) {
     close(accountFD);
 
     bzero(outputBuffer, sizeof(outputBuffer));
-    if (acc.balance == 0)
-    {
-        // No money, hence can close account
+    if (acc.balance == 0) {
         acc.active = 0;
         accountFD = open(ACCOUNT_FILE, O_WRONLY);
         if (accountFD == -1) {
@@ -181,12 +179,11 @@ int deleteAccount(int connFD) {
         
         lock.l_type = F_UNLCK;
         fcntl(accountFD, F_SETLK, &lock);
-        strcpy(outputBuffer, ADMIN_DEL_ACCOUNT_SUCCESS);
-    }
-    else
-        strcpy(outputBuffer, ADMIN_DEL_ACCOUNT_FAILURE);
+        strcpy(outputBuffer, ADMIN_DELETED_ACCOUNT_SUCCESS_MESSAGE);
+    } else
+        strcpy(outputBuffer, ADMIN_DELETED_ACCOUNT_FAILURE_MESSAGE);
     write(connFD, outputBuffer, strlen(outputBuffer));
-    read(connFD, inputBuffer, sizeof(inputBuffer)); // Dummy read
+    read(connFD, inputBuffer, sizeof(inputBuffer));
 
     return 1;
 }
@@ -194,29 +191,28 @@ int deleteAccount(int connFD) {
 int modifyCustomerInfo(int connFD) {
     char inputBuffer[SIZE], outputBuffer[SIZE];
     struct Customer customer;
-    int customerID;
-    int offset;
+    int custID, offset;
 
-    write(connFD, ADMIN_MOD_CUSTOMER_ID, strlen(ADMIN_MOD_CUSTOMER_ID));
+    write(connFD, ADMIN_CUSTOMER_ID_MESSAGE, strlen(ADMIN_CUSTOMER_ID_MESSAGE));
     bzero(inputBuffer, sizeof(inputBuffer));
     read(connFD, inputBuffer, sizeof(inputBuffer));
 
-    customerID = atoi(inputBuffer);
+    custID = atoi(inputBuffer);
 
     int customerFD = open(CUSTOMER_FILE, O_RDONLY);
     if (customerFD == -1) {
         bzero(outputBuffer, sizeof(outputBuffer));
-        strcpy(outputBuffer, CUSTOMER_ID_DOESNT_EXIT);
+        strcpy(outputBuffer, CUSTOMER_ID_DOESNT_EXIST);
         strcat(outputBuffer, "^");
         write(connFD, outputBuffer, strlen(outputBuffer));
         read(connFD, inputBuffer, sizeof(inputBuffer));
         return 0;
     }
     
-    offset = lseek(customerFD, customerID * sizeof(struct Customer), SEEK_SET);
+    offset = lseek(customerFD, custID * sizeof(struct Customer), SEEK_SET);
     if (errno == EINVAL) {
         bzero(outputBuffer, sizeof(outputBuffer));
-        strcpy(outputBuffer, CUSTOMER_ID_DOESNT_EXIT);
+        strcpy(outputBuffer, CUSTOMER_ID_DOESNT_EXIST);
         strcat(outputBuffer, "^");
         write(connFD, outputBuffer, strlen(outputBuffer));
         read(connFD, inputBuffer, sizeof(inputBuffer));
@@ -226,7 +222,12 @@ int modifyCustomerInfo(int connFD) {
         return 0;
     }
 
-    struct flock lock = {F_RDLCK, SEEK_SET, offset, sizeof(struct Customer), getpid()};
+    struct flock lock;
+    lock.l_type = F_RDLCK;
+    lock.l_whence = SEEK_SET;
+    lock.l_start = offset;
+    lock.l_len = sizeof(struct Customer);
+    lock.l_pid = getpid();
 
     fcntl(customerFD, F_SETLKW, &lock);
 
@@ -236,11 +237,11 @@ int modifyCustomerInfo(int connFD) {
     fcntl(customerFD, F_SETLK, &lock);
 
     close(customerFD);
-    write(connFD, ADMIN_MOD_CUSTOMER_MENU, strlen(ADMIN_MOD_CUSTOMER_MENU));
+    write(connFD, ADMIN_MODIFY_CUSTOMER_MENU, strlen(ADMIN_MODIFY_CUSTOMER_MENU));
     read(connFD, inputBuffer, sizeof(inputBuffer));
 
-    int choice = atoi(inputBuffer);
-    if (choice == 0) {
+    int opt = atoi(inputBuffer);
+    if (opt == 0) {
         bzero(outputBuffer, sizeof(outputBuffer));
         strcpy(outputBuffer, ERRON_INPUT_FOR_NUMBER);
         write(connFD, outputBuffer, strlen(outputBuffer));
@@ -249,27 +250,27 @@ int modifyCustomerInfo(int connFD) {
     }
 
     bzero(inputBuffer, sizeof(inputBuffer));
-    switch (choice) {
+    switch (opt) {
         case 1:
-            write(connFD, ADMIN_MOD_CUSTOMER_NEW_NAME, strlen(ADMIN_MOD_CUSTOMER_NEW_NAME));
+            write(connFD, ADMIN_MODIFY_CUSTOMER_NEW_NAME, strlen(ADMIN_MODIFY_CUSTOMER_NEW_NAME));
             read(connFD, &inputBuffer, sizeof(inputBuffer));
             strcpy(customer.name, inputBuffer);
             break;
         case 2:
-            write(connFD, ADMIN_MOD_CUSTOMER_NEW_AGE, strlen(ADMIN_MOD_CUSTOMER_NEW_AGE));
+            write(connFD, ADMIN_MODIFY_CUSTOMER_NEW_AGE, strlen(ADMIN_MODIFY_CUSTOMER_NEW_AGE));
             read(connFD, &inputBuffer, sizeof(inputBuffer));
-            int updatedAge = atoi(inputBuffer);
-            if (updatedAge == 0) {
+            int newAge = atoi(inputBuffer);
+            if (newAge == 0) {
                 bzero(outputBuffer, sizeof(outputBuffer));
                 strcpy(outputBuffer, ERRON_INPUT_FOR_NUMBER);
                 write(connFD, outputBuffer, strlen(outputBuffer));
                 read(connFD, inputBuffer, sizeof(inputBuffer));
                 return 0;
             }
-            customer.age = updatedAge;
+            customer.age = newAge;
             break;
         case 3:
-            write(connFD, ADMIN_MOD_CUSTOMER_NEW_GENDER, strlen(ADMIN_MOD_CUSTOMER_NEW_GENDER));
+            write(connFD, ADMIN_MODIFY_CUSTOMER_NEW_GENDER, strlen(ADMIN_MODIFY_CUSTOMER_NEW_GENDER));
             read(connFD, &inputBuffer, sizeof(inputBuffer));
             customer.gender = inputBuffer[0];
             break;
@@ -286,7 +287,7 @@ int modifyCustomerInfo(int connFD) {
         printf("Error while opening customer file");
         return 0;
     }
-    offset = lseek(customerFD, customerID * sizeof(struct Customer), SEEK_SET);
+    offset = lseek(customerFD, custID * sizeof(struct Customer), SEEK_SET);
 
     lock.l_type = F_WRLCK;
     lock.l_start = offset;
@@ -299,14 +300,14 @@ int modifyCustomerInfo(int connFD) {
 
     close(customerFD);
 
-    write(connFD, ADMIN_MOD_CUSTOMER_SUCCESS, strlen(ADMIN_MOD_CUSTOMER_SUCCESS));
+    write(connFD, ADMIN_MODIFY_CUSTOMER_SUCCESS_MESSAGE, strlen(ADMIN_MODIFY_CUSTOMER_SUCCESS_MESSAGE));
     read(connFD, inputBuffer, sizeof(inputBuffer));
 
     return 1;
 }
 
 int addCustomer(int connFD, int isPrimary, int newAccNumber) {
-    int readBytes, writeBytes;
+    int writeBytes;
     char inputBuffer[SIZE], outputBuffer[SIZE];
 
     struct Customer newCust, prevCust;
@@ -320,7 +321,13 @@ int addCustomer(int connFD, int isPrimary, int newAccNumber) {
     } else {
         int offset = lseek(customerFD, -sizeof(struct Customer), SEEK_END);
 
-        struct flock lock = {F_RDLCK, SEEK_SET, offset, sizeof(struct Customer), getpid()};
+        struct flock lock;
+        lock.l_type = F_RDLCK;
+        lock.l_whence = SEEK_SET;
+        lock.l_start = offset;
+        lock.l_len = sizeof(struct Customer);
+        lock.l_pid = getpid();
+
         fcntl(customerFD, F_SETLKW, &lock);
 
         read(customerFD, &prevCust, sizeof(struct Customer));
@@ -332,43 +339,43 @@ int addCustomer(int connFD, int isPrimary, int newAccNumber) {
     }
 
     if (isPrimary == 1)
-        sprintf(outputBuffer, "%s%s", ADMIN_ADD_CUSTOMER_PRIMARY, ADMIN_ADD_CUSTOMER_NAME);
+        sprintf(outputBuffer, "%s%s", ADMIN_CREATE_CUSTOMER_PRIMARY, ADMIN_CREATE_CUSTOMER_NAME);
     else
-        sprintf(outputBuffer, "%s%s", ADMIN_ADD_CUSTOMER_SECONDARY, ADMIN_ADD_CUSTOMER_NAME);
+        sprintf(outputBuffer, "%s%s", ADMIN_CREATE_CUSTOMER_SECONDARY, ADMIN_CREATE_CUSTOMER_NAME);
 
     write(connFD, outputBuffer, sizeof(outputBuffer));
     read(connFD, inputBuffer, sizeof(inputBuffer));
 
     strcpy(newCust.name, inputBuffer);
 
-    write(connFD, ADMIN_ADD_CUSTOMER_GENDER, strlen(ADMIN_ADD_CUSTOMER_GENDER));
+    write(connFD, ADMIN_CREATE_CUSTOMER_GENDER, strlen(ADMIN_CREATE_CUSTOMER_GENDER));
 
     bzero(inputBuffer, sizeof(inputBuffer));
     read(connFD, inputBuffer, sizeof(inputBuffer));
     if (inputBuffer[0] == 'M' || inputBuffer[0] == 'F')
         newCust.gender = inputBuffer[0];
     else {
-        writeBytes = write(connFD, ADMIN_ADD_CUSTOMER_WRONG_GENDER, strlen(ADMIN_ADD_CUSTOMER_WRONG_GENDER));
-        readBytes = read(connFD, inputBuffer, sizeof(inputBuffer)); // Dummy read
+        write(connFD, ADMIN_CREATE_CUSTOMER_WRONG_GENDER_MESSAGE, strlen(ADMIN_CREATE_CUSTOMER_WRONG_GENDER_MESSAGE));
+        read(connFD, inputBuffer, sizeof(inputBuffer));
         return 0;
     }
 
     bzero(outputBuffer, sizeof(outputBuffer));
-    strcpy(outputBuffer, ADMIN_ADD_CUSTOMER_AGE);
+    strcpy(outputBuffer, ADMIN_CREATE_CUSTOMER_AGE);
     write(connFD, outputBuffer, strlen(outputBuffer));
 
     bzero(inputBuffer, sizeof(inputBuffer));
     read(connFD, inputBuffer, sizeof(inputBuffer));
 
-    int customerAge = atoi(inputBuffer);
-    if (customerAge == 0) {
+    int custAge = atoi(inputBuffer);
+    if (custAge == 0) {
         bzero(outputBuffer, sizeof(outputBuffer));
         strcpy(outputBuffer, ERRON_INPUT_FOR_NUMBER);
         write(connFD, outputBuffer, strlen(outputBuffer));
         read(connFD, inputBuffer, sizeof(inputBuffer));
         return 0;
     }
-    newCust.age = customerAge;
+    newCust.age = custAge;
 
     newCust.account = newAccNumber;
 
@@ -377,9 +384,7 @@ int addCustomer(int connFD, int isPrimary, int newAccNumber) {
     sprintf(outputBuffer, "%d", newCust.id);
     strcat(newCust.login, outputBuffer);
 
-    char hashedPassword[SIZE];
-    strcpy(hashedPassword, crypt(AUTOGEN_PASSWORD, SALT_BAE));
-    strcpy(newCust.password, hashedPassword);
+    strcpy(newCust.password, GEN_PASSWORD);
 
     customerFD = open(CUSTOMER_FILE, O_CREAT | O_APPEND | O_WRONLY, S_IRWXU);
     if (customerFD == -1) {
@@ -395,7 +400,8 @@ int addCustomer(int connFD, int isPrimary, int newAccNumber) {
     close(customerFD);
 
     bzero(outputBuffer, sizeof(outputBuffer));
-    sprintf(outputBuffer, "%s%s-%d\n%s%s", ADMIN_ADD_CUSTOMER_AUTOGEN_LOGIN, newCust.name, newCust.id, ADMIN_ADD_CUSTOMER_AUTOGEN_PASSWORD, AUTOGEN_PASSWORD);
+    sprintf(outputBuffer, "%s%s-%d\n%s%s", ADMIN_CREATE_CUSTOMER_GEN_LOGIN, newCust.name, newCust.id, ADMIN_CREATE_CUSTOMER_GEN_PASSWORD, GEN_PASSWORD);
+    strcat(outputBuffer, "^");
     write(connFD, outputBuffer, strlen(outputBuffer));
     read(connFD, inputBuffer, sizeof(inputBuffer));
 

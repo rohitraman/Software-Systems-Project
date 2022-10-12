@@ -21,10 +21,8 @@ void main() {
 
     connect(sockFD, (struct sockaddr *)&serverAddress, sizeof(serverAddress));
 
-    char inputBuffer[1000], outputBuffer[1000];
+    char inputBuffer[1000], outputBuffer[1000], buffer[1000];
     int readBytes, writeBytes;
-
-    char buffer[1000];
 
     do {
         bzero(inputBuffer, sizeof(inputBuffer));

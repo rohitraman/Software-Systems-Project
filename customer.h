@@ -1,524 +1,328 @@
-// Semaphores are necessary joint account due the design choice I've made
 #include <sys/ipc.h>
 #include <sys/sem.h>
 
-struct Customer loggedInCustomer;
-int semIdentifier;
+int customerLoginHandler(int connFD);
+int depositAmount(int connFD, int semID, struct Customer loggedInCustomer);
+int withdrawAmount(int connFD, int semID, struct Customer loggedInCustomer);
+int retreiveBalance(int connFD, int semID, struct Customer loggedInCustomer);
+int changePassword(int connFD, int semID, struct Customer loggedInCustomer);
+void writeTransactionToArray(int *transactionArray, int ID);
+int writeTransactionToFile(int accountNumber, long int oldBalance, long int newBalance, int operation);
+int lockCriticalSection(struct sembuf *semOp, int semID);
+int unlockCriticalSection(struct sembuf *semOp, int semID);
 
-// Function Prototypes =================================
+ union semun 
+ {
+    int val;
+    struct semid_ds *buf;
+    unsigned short  *array;
+    struct seminfo  *__buf;
+} semSet;
 
-bool customerLoginHandler(int connFD);
-bool deposit(int connFD);
-bool withdraw(int connFD);
-bool get_balance(int connFD);
-bool change_password(int connFD);
-bool lock_critical_section(struct sembuf *semOp);
-bool unlock_critical_section(struct sembuf *sem_op);
-void write_transaction_to_array(int *transactionArray, int ID);
-int write_transaction_to_file(int accountNumber, long int oldBalance, long int newBalance, bool operation);
+int customerLoginHandler(int connFD) {
+    struct Customer loggedInCustomer;
+    if (loginHandler(0, connFD, &loggedInCustomer) == 1) {
+        char inputBuffer[1000], outputBuffer[1000];
 
-// =====================================================
+        int semKey = ftok(".", loggedInCustomer.account);
 
-// Function Definition =================================
-
-bool customerLoginHandler(int connFD)
-{
-    if (loginHandler(0, connFD, &loggedInCustomer) == 1)
-    {
-        ssize_t writeBytes, readBytes;            // Number of bytes read from / written to the client
-        char readBuffer[1000], writeBuffer[1000]; // A buffer used for reading & writing to the client
-
-        // Get a semaphore for the user
-        key_t semKey = ftok(CUSTOMER_FILE, loggedInCustomer.account); // Generate a key based on the account number hence, different customers will have different semaphores
-
-        union semun
-        {
-            int val; // Value of the semaphore
-        } semSet;
-
-        int semctlStatus;
-        semIdentifier = semget(semKey, 1, 0); // Get the semaphore if it exists
-        if (semIdentifier == -1)
-        {
-            semIdentifier = semget(semKey, 1, IPC_CREAT | 0700); // Create a new semaphore
-            if (semIdentifier == -1)
-            {
-                perror("Error while creating semaphore!");
-                _exit(1);
-            }
-
-            semSet.val = 1; // Set a binary semaphore
-            semctlStatus = semctl(semIdentifier, 0, SETVAL, semSet);
-            if (semctlStatus == -1)
-            {
-                perror("Error while initializing a binary sempahore!");
-                _exit(1);
-            }
+        int semID = semget(semKey, 1, 0);
+        if (semID == -1) {
+            semID = semget(semKey, 1, IPC_CREAT | 0700);
+            semSet.val = 1;
+            semctl(semID, 0, SETVAL, semSet);
         }
 
-        bzero(writeBuffer, sizeof(writeBuffer));
-        strcpy(writeBuffer, CUSTOMER_LOGIN_SUCCESS);
-        while (1)
-        {
-            strcat(writeBuffer, "\n");
-            strcat(writeBuffer, CUSTOMER_MENU);
-            writeBytes = write(connFD, writeBuffer, strlen(writeBuffer));
-            if (writeBytes == -1)
-            {
-                perror("Error while writing CUSTOMER_MENU to client!");
-                return false;
-            }
-            bzero(writeBuffer, sizeof(writeBuffer));
+        strcpy(outputBuffer, CUSTOMER_LOGIN_SUCCESS_MESSAGE);
+        while (1) {
+            strcat(outputBuffer, "\n");
+            strcat(outputBuffer, CUSTOMER_MENU);
+            write(connFD, outputBuffer, strlen(outputBuffer));
+            bzero(outputBuffer, sizeof(outputBuffer));
 
-            bzero(readBuffer, sizeof(readBuffer));
-            readBytes = read(connFD, readBuffer, sizeof(readBuffer));
-            if (readBytes == -1)
-            {
-                perror("Error while reading client's choice for CUSTOMER_MENU");
-                return false;
-            }
+            bzero(inputBuffer, sizeof(inputBuffer));
+            read(connFD, inputBuffer, sizeof(inputBuffer));
             
-            // printf("READ BUFFER : %s\n", readBuffer);
-            int choice = atoi(readBuffer);
-            // printf("CHOICE : %d\n", choice);
-            switch (choice)
+            int opt = atoi(inputBuffer);
+            switch (opt)
             {
-            case 1:
-                getCustomerDetails(connFD, loggedInCustomer.id);
-                break;
-            case 2:
-                deposit(connFD);
-                break;
-            case 3:
-                withdraw(connFD);
-                break;
-            case 4:
-                get_balance(connFD);
-                break;
-            case 5:
-                getTransactionDetails(connFD, loggedInCustomer.account);
-                break;
-            case 6:
-                change_password(connFD);
-                break;
-            default:
-                writeBytes = write(connFD, CUSTOMER_LOGOUT, strlen(CUSTOMER_LOGOUT));
-                return false;
+                case 1:
+                    getCustomerDetails(connFD, loggedInCustomer.id);
+                    break;
+                case 2:
+                    depositAmount(connFD, semID, loggedInCustomer);
+                    break;
+                case 3:
+                    withdrawAmount(connFD, semID, loggedInCustomer);
+                    break;
+                case 4:
+                    retreiveBalance(connFD, semID, loggedInCustomer);
+                    break;
+                case 5:
+                    getTransactionDetails(connFD, loggedInCustomer.account);
+                    break;
+                case 6:
+                    changePassword(connFD, semID, loggedInCustomer);
+                    break;
+                default:
+                    write(connFD, CUSTOMER_LOGOUT_MESSAGE, strlen(CUSTOMER_LOGOUT_MESSAGE));
+                    return 0;
             }
         }
     }
-    else
-    {
-        // CUSTOMER LOGIN FAILED
-        return false;
+    else {
+        return 0;
     }
-    return true;
+    return 1;
 }
 
-bool deposit(int connFD)
-{
-    char readBuffer[1000], writeBuffer[1000];
-    ssize_t readBytes, writeBytes;
+int depositAmount(int connFD, int semID, struct Customer loggedInCustomer) {
+    char inputBuffer[1000], outputBuffer[1000];
 
     struct Account account;
-    account.accountNumber = loggedInCustomer.account;
+    account.accNo = loggedInCustomer.account;
 
-    long int depositAmount = 0;
+    long int amtToDeposit = 0;
 
-    // Lock the critical section
     struct sembuf semOp;
-    lock_critical_section(&semOp);
+    lockCriticalSection(&semOp, semID);
 
-    if (getAccountDetails(connFD, &account))
-    {
-        
-        if (account.active)
-        {
+    if (getAccountDetails(connFD, &account)) {
+        if (account.active) {
+            write(connFD, DEPOSIT_AMOUNT_MESSAGE, strlen(DEPOSIT_AMOUNT_MESSAGE));
 
-            writeBytes = write(connFD, DEPOSIT_AMOUNT, strlen(DEPOSIT_AMOUNT));
-            if (writeBytes == -1)
-            {
-                perror("Error writing DEPOSIT_AMOUNT to client!");
-                unlock_critical_section(&semOp);
-                return false;
-            }
+            bzero(inputBuffer, sizeof(inputBuffer));
+            read(connFD, inputBuffer, sizeof(inputBuffer));
 
-            bzero(readBuffer, sizeof(readBuffer));
-            readBytes = read(connFD, readBuffer, sizeof(readBuffer));
-            if (readBytes == -1)
-            {
-                perror("Error reading deposit money from client!");
-                unlock_critical_section(&semOp);
-                return false;
-            }
+            amtToDeposit = atol(inputBuffer);
+            if (amtToDeposit > 0) {
+                int newTransID = writeTransactionToFile(account.accNo, account.balance, account.balance + amtToDeposit, 1);
+                writeTransactionToArray(account.transactions, newTransID);
 
-            depositAmount = atol(readBuffer);
-            if (depositAmount != 0)
-            {
+                account.balance += amtToDeposit;
 
-                int newTransactionID = write_transaction_to_file(account.accountNumber, account.balance, account.balance + depositAmount, 1);
-                write_transaction_to_array(account.transactions, newTransactionID);
+                int accountFD = open(ACCOUNT_FILE, O_WRONLY);
+                int offset = lseek(accountFD, account.accNo * sizeof(struct Account), SEEK_SET);
 
-                account.balance += depositAmount;
+                struct flock lock;
+                lock.l_type = F_WRLCK;
+                lock.l_whence = SEEK_SET;
+                lock.l_start = offset;
+                lock.l_len = sizeof(struct Account);
+                lock.l_pid = getpid();
 
-                int accountFileDescriptor = open(ACCOUNT_FILE, O_WRONLY);
-                off_t offset = lseek(accountFileDescriptor, account.accountNumber * sizeof(struct Account), SEEK_SET);
+                fcntl(accountFD, F_SETLKW, &lock);
 
-                struct flock lock = {F_WRLCK, SEEK_SET, offset, sizeof(struct Account), getpid()};
-                int lockingStatus = fcntl(accountFileDescriptor, F_SETLKW, &lock);
-                if (lockingStatus == -1)
-                {
-                    perror("Error obtaining write lock on account file!");
-                    unlock_critical_section(&semOp);
-                    return false;
-                }
-
-                writeBytes = write(accountFileDescriptor, &account, sizeof(struct Account));
-                if (writeBytes == -1)
-                {
-                    perror("Error storing updated deposit money in account record!");
-                    unlock_critical_section(&semOp);
-                    return false;
-                }
-
+                write(accountFD, &account, sizeof(struct Account));            
                 lock.l_type = F_UNLCK;
-                fcntl(accountFileDescriptor, F_SETLK, &lock);
+                fcntl(accountFD, F_SETLK, &lock);
 
-                write(connFD, DEPOSIT_AMOUNT_SUCCESS, strlen(DEPOSIT_AMOUNT_SUCCESS));
-                read(connFD, readBuffer, sizeof(readBuffer)); // Dummy read
-
-                get_balance(connFD);
-
-                unlock_critical_section(&semOp);
-
-                return true;
+                write(connFD, DEPOSIT_AMOUNT_SUCCESS_MESSAGE, strlen(DEPOSIT_AMOUNT_SUCCESS_MESSAGE));
+                read(connFD, inputBuffer, sizeof(inputBuffer));
+                // retreiveBalance(connFD, semID, loggedInCustomer);
+                unlockCriticalSection(&semOp, semID);
+                return 1;
             }
-            else
-                writeBytes = write(connFD, DEPOSIT_AMOUNT_INVALID, strlen(DEPOSIT_AMOUNT_INVALID));
+            else {
+                write(connFD, DEPOSIT_AMOUNT_INVALID_MESSAGE, strlen(DEPOSIT_AMOUNT_INVALID_MESSAGE));
+            }
         }
-        else
-            write(connFD, ACCOUNT_DEACTIVATED, strlen(ACCOUNT_DEACTIVATED));
-        read(connFD, readBuffer, sizeof(readBuffer)); // Dummy read
-
-        unlock_critical_section(&semOp);
+        else {
+            write(connFD, ACCOUNT_DEACTIVATED_MESSAGE, strlen(ACCOUNT_DEACTIVATED_MESSAGE));
+        }
+        read(connFD, inputBuffer, sizeof(inputBuffer));
+        unlockCriticalSection(&semOp, semID);
     }
-    else
-    {
-        // FAIL
-        unlock_critical_section(&semOp);
-        return false;
+    else {
+        unlockCriticalSection(&semOp, semID);
+        return 0;
     }
 }
 
-bool withdraw(int connFD)
-{
-    char readBuffer[1000], writeBuffer[1000];
-    ssize_t readBytes, writeBytes;
+int withdrawAmount(int connFD, int semID, struct Customer loggedInCustomer) {
+    char inputBuffer[1000], outputBuffer[1000];
+    int readBytes, writeBytes;
 
     struct Account account;
-    account.accountNumber = loggedInCustomer.account;
+    account.accNo = loggedInCustomer.account;
 
     long int withdrawAmount = 0;
 
-    // Lock the critical section
     struct sembuf semOp;
-    lock_critical_section(&semOp);
+    lockCriticalSection(&semOp, semID);
 
-    if (getAccountDetails(connFD, &account))
-    {
-        if (account.active)
-        {
+    if (getAccountDetails(connFD, &account)) {
+        if (account.active) {
+            write(connFD, WITHDRAW_AMOUNT_MESSAGE, strlen(WITHDRAW_AMOUNT_MESSAGE));
 
-            writeBytes = write(connFD, WITHDRAW_AMOUNT, strlen(WITHDRAW_AMOUNT));
-            if (writeBytes == -1)
-            {
-                perror("Error writing WITHDRAW_AMOUNT message to client!");
-                unlock_critical_section(&semOp);
-                return false;
-            }
+            bzero(inputBuffer, sizeof(inputBuffer));
+            read(connFD, inputBuffer, sizeof(inputBuffer));
+            
+            withdrawAmount = atol(inputBuffer);
 
-            bzero(readBuffer, sizeof(readBuffer));
-            readBytes = read(connFD, readBuffer, sizeof(readBuffer));
-            if (readBytes == -1)
-            {
-                perror("Error reading withdraw amount from client!");
-                unlock_critical_section(&semOp);
-                return false;
-            }
-
-            withdrawAmount = atol(readBuffer);
-
-            if (withdrawAmount != 0 && account.balance - withdrawAmount >= 0)
-            {
-
-                int newTransactionID = write_transaction_to_file(account.accountNumber, account.balance, account.balance - withdrawAmount, 0);
-                write_transaction_to_array(account.transactions, newTransactionID);
+            if (withdrawAmount > 0 && account.balance - withdrawAmount >= 0) {
+                int newTransID = writeTransactionToFile(account.accNo, account.balance, account.balance - withdrawAmount, 0);
+                writeTransactionToArray(account.transactions, newTransID);
 
                 account.balance -= withdrawAmount;
 
-                int accountFileDescriptor = open(ACCOUNT_FILE, O_WRONLY);
-                off_t offset = lseek(accountFileDescriptor, account.accountNumber * sizeof(struct Account), SEEK_SET);
+                int accountFD = open(ACCOUNT_FILE, O_WRONLY);
+                int offset = lseek(accountFD, account.accNo * sizeof(struct Account), SEEK_SET);
 
-                struct flock lock = {F_WRLCK, SEEK_SET, offset, sizeof(struct Account), getpid()};
-                int lockingStatus = fcntl(accountFileDescriptor, F_SETLKW, &lock);
-                if (lockingStatus == -1)
-                {
-                    perror("Error obtaining write lock on account record!");
-                    unlock_critical_section(&semOp);
-                    return false;
-                }
+                struct flock lock;
+                lock.l_type = F_WRLCK;
+                lock.l_whence = SEEK_SET;
+                lock.l_start = offset;
+                lock.l_len = sizeof(struct Account);
+                lock.l_pid = getpid();
 
-                writeBytes = write(accountFileDescriptor, &account, sizeof(struct Account));
-                if (writeBytes == -1)
-                {
-                    perror("Error writing updated balance into account file!");
-                    unlock_critical_section(&semOp);
-                    return false;
-                }
+                fcntl(accountFD, F_SETLKW, &lock);
+                write(accountFD, &account, sizeof(struct Account));
 
                 lock.l_type = F_UNLCK;
-                fcntl(accountFileDescriptor, F_SETLK, &lock);
+                fcntl(accountFD, F_SETLK, &lock);
 
-                write(connFD, WITHDRAW_AMOUNT_SUCCESS, strlen(WITHDRAW_AMOUNT_SUCCESS));
-                read(connFD, readBuffer, sizeof(readBuffer)); // Dummy read
+                write(connFD, WITHDRAW_AMOUNT_SUCCESS_MESSAGE, strlen(WITHDRAW_AMOUNT_SUCCESS_MESSAGE));
+                read(connFD, inputBuffer, sizeof(inputBuffer));
 
-                get_balance(connFD);
+                // retreiveBalance(connFD, semID, loggedInCustomer);
 
-                unlock_critical_section(&semOp);
+                unlockCriticalSection(&semOp, semID);
 
-                return true;
+                return 1;
             }
             else
-                writeBytes = write(connFD, WITHDRAW_AMOUNT_INVALID, strlen(WITHDRAW_AMOUNT_INVALID));
+                writeBytes = write(connFD, WITHDRAW_AMOUNT_INVALID_MESSAGE, strlen(WITHDRAW_AMOUNT_INVALID_MESSAGE));
         }
         else
-            write(connFD, ACCOUNT_DEACTIVATED, strlen(ACCOUNT_DEACTIVATED));
-        read(connFD, readBuffer, sizeof(readBuffer)); // Dummy read
+            write(connFD, ACCOUNT_DEACTIVATED_MESSAGE, strlen(ACCOUNT_DEACTIVATED_MESSAGE));
+        read(connFD, inputBuffer, sizeof(inputBuffer)); // Dummy read
 
-        unlock_critical_section(&semOp);
+        unlockCriticalSection(&semOp, semID);
     }
-    else
-    {
-        // FAILURE while getting account information
-        unlock_critical_section(&semOp);
-        return false;
+    else {
+        unlockCriticalSection(&semOp, semID);
+        return 0;
     }
 }
 
-bool get_balance(int connFD)
-{
+int retreiveBalance(int connFD, int semID, struct Customer loggedInCustomer) {
     char buffer[1000];
     struct Account account;
-    account.accountNumber = loggedInCustomer.account;
-    if (getAccountDetails(connFD, &account))
-    {
-        bzero(buffer, sizeof(buffer));
-        if (account.active)
-        {
-            sprintf(buffer, "You have ₹ %ld imaginary money in our bank!^", account.balance);
+    account.accNo = loggedInCustomer.account;
+    if (getAccountDetails(connFD, &account)) {
+        if (account.active) {
+            sprintf(buffer, "You have ₹ %ld in your account!^", account.balance);
             write(connFD, buffer, strlen(buffer));
         }
         else
-            write(connFD, ACCOUNT_DEACTIVATED, strlen(ACCOUNT_DEACTIVATED));
-        read(connFD, buffer, sizeof(buffer)); // Dummy read
+            write(connFD, ACCOUNT_DEACTIVATED_MESSAGE, strlen(ACCOUNT_DEACTIVATED_MESSAGE));
+        read(connFD, buffer, sizeof(buffer));
     }
-    else
-    {
-        // ERROR while getting balance
-        return false;
+    else {
+        return 0;
     }
 }
 
-bool change_password(int connFD)
-{
-    ssize_t readBytes, writeBytes;
-    char readBuffer[1000], writeBuffer[1000], hashedPassword[1000];
+int changePassword(int connFD, int semID, struct Customer loggedInCustomer) {
+    int readBytes, writeBytes;
+    char inputBuffer[1000], outputBuffer[1000], newPassword[1000];
 
-    char newPassword[1000];
-
-    // Lock the critical section
     struct sembuf semOp = {0, -1, SEM_UNDO};
-    int semopStatus = semop(semIdentifier, &semOp, 1);
-    if (semopStatus == -1)
-    {
-        perror("Error while locking critical section");
-        return false;
-    }
+    semop(semID, &semOp, 1);
 
-    writeBytes = write(connFD, PASSWORD_CHANGE_OLD_PASS, strlen(PASSWORD_CHANGE_OLD_PASS));
-    if (writeBytes == -1)
-    {
-        perror("Error writing PASSWORD_CHANGE_OLD_PASS message to client!");
-        unlock_critical_section(&semOp);
-        return false;
-    }
+    write(connFD, PASSWORD_CHANGE_OLD_PASS, strlen(PASSWORD_CHANGE_OLD_PASS));
 
-    bzero(readBuffer, sizeof(readBuffer));
-    readBytes = read(connFD, readBuffer, sizeof(readBuffer));
-    if (readBytes == -1)
-    {
-        perror("Error reading old password response from client");
-        unlock_critical_section(&semOp);
-        return false;
-    }
+    bzero(inputBuffer, sizeof(inputBuffer));
+    read(connFD, inputBuffer, sizeof(inputBuffer));
 
-    if (strcmp(crypt(readBuffer, SALT_BAE), loggedInCustomer.password) == 0)
-    {
-        // Password matches with old password
-        writeBytes = write(connFD, PASSWORD_CHANGE_NEW_PASS, strlen(PASSWORD_CHANGE_NEW_PASS));
-        if (writeBytes == -1)
-        {
-            perror("Error writing PASSWORD_CHANGE_NEW_PASS message to client!");
-            unlock_critical_section(&semOp);
-            return false;
-        }
-        bzero(readBuffer, sizeof(readBuffer));
-        readBytes = read(connFD, readBuffer, sizeof(readBuffer));
-        if (readBytes == -1)
-        {
-            perror("Error reading new password response from client");
-            unlock_critical_section(&semOp);
-            return false;
-        }
+    if (strcmp(inputBuffer, loggedInCustomer.password) == 0) {
+        write(connFD, PASSWORD_CHANGE_NEW_PASS_MESSAGE, strlen(PASSWORD_CHANGE_NEW_PASS_MESSAGE));
+        bzero(inputBuffer, sizeof(inputBuffer));
+        read(connFD, inputBuffer, sizeof(inputBuffer));
+        strcpy(newPassword, inputBuffer);
 
-        strcpy(newPassword, crypt(readBuffer, SALT_BAE));
+        write(connFD, PASSWORD_CHANGE_NEW_PASS_REENTER_MESSAGE, strlen(PASSWORD_CHANGE_NEW_PASS_REENTER_MESSAGE));
+        bzero(inputBuffer, sizeof(inputBuffer));
+        read(connFD, inputBuffer, sizeof(inputBuffer));
 
-        writeBytes = write(connFD, PASSWORD_CHANGE_NEW_PASS_RE, strlen(PASSWORD_CHANGE_NEW_PASS_RE));
-        if (writeBytes == -1)
-        {
-            perror("Error writing PASSWORD_CHANGE_NEW_PASS_RE message to client!");
-            unlock_critical_section(&semOp);
-            return false;
-        }
-        bzero(readBuffer, sizeof(readBuffer));
-        readBytes = read(connFD, readBuffer, sizeof(readBuffer));
-        if (readBytes == -1)
-        {
-            perror("Error reading new password reenter response from client");
-            unlock_critical_section(&semOp);
-            return false;
-        }
-
-        if (strcmp(crypt(readBuffer, SALT_BAE), newPassword) == 0)
-        {
-            // New & reentered passwords match
-
+        if (strcmp(inputBuffer, newPassword) == 0) {
             strcpy(loggedInCustomer.password, newPassword);
 
-            int customerFileDescriptor = open(CUSTOMER_FILE, O_WRONLY);
-            if (customerFileDescriptor == -1)
-            {
-                perror("Error opening customer file!");
-                unlock_critical_section(&semOp);
-                return false;
+            int custFD = open(CUSTOMER_FILE, O_WRONLY);
+            if (custFD == -1) {
+                printf("Error opening customer file!");
+                return 0;
             }
 
-            off_t offset = lseek(customerFileDescriptor, loggedInCustomer.id * sizeof(struct Customer), SEEK_SET);
-            if (offset == -1)
-            {
-                perror("Error seeking to the customer record!");
-                unlock_critical_section(&semOp);
-                return false;
-            }
+            int offset = lseek(custFD, loggedInCustomer.id * sizeof(struct Customer), SEEK_SET);
 
-            struct flock lock = {F_WRLCK, SEEK_SET, offset, sizeof(struct Customer), getpid()};
-            int lockingStatus = fcntl(customerFileDescriptor, F_SETLKW, &lock);
-            if (lockingStatus == -1)
-            {
-                perror("Error obtaining write lock on customer record!");
-                unlock_critical_section(&semOp);
-                return false;
-            }
+            struct flock lock;
+            lock.l_type = F_WRLCK;
+            lock.l_whence = SEEK_SET;
+            lock.l_start = offset;
+            lock.l_len = sizeof(struct Account);
+            lock.l_pid = getpid();
+            
+            fcntl(custFD, F_SETLKW, &lock);
 
-            writeBytes = write(customerFileDescriptor, &loggedInCustomer, sizeof(struct Customer));
-            if (writeBytes == -1)
-            {
-                perror("Error storing updated customer password into customer record!");
-                unlock_critical_section(&semOp);
-                return false;
-            }
+            write(custFD, &loggedInCustomer, sizeof(struct Customer));
 
             lock.l_type = F_UNLCK;
-            lockingStatus = fcntl(customerFileDescriptor, F_SETLK, &lock);
+            fcntl(custFD, F_SETLK, &lock);
 
-            close(customerFileDescriptor);
+            close(custFD);
 
-            writeBytes = write(connFD, PASSWORD_CHANGE_SUCCESS, strlen(PASSWORD_CHANGE_SUCCESS));
-            readBytes = read(connFD, readBuffer, sizeof(readBuffer)); // Dummy read
+            write(connFD, PASSWORD_CHANGE_SUCCESS_MESSAGE, strlen(PASSWORD_CHANGE_SUCCESS_MESSAGE));
+            read(connFD, inputBuffer, sizeof(inputBuffer));
 
-            unlock_critical_section(&semOp);
+            unlockCriticalSection(&semOp, semID);
 
-            return true;
+            return 1;
         }
-        else
-        {
-            // New & reentered passwords don't match
-            writeBytes = write(connFD, PASSWORD_CHANGE_NEW_PASS_INVALID, strlen(PASSWORD_CHANGE_NEW_PASS_INVALID));
-            readBytes = read(connFD, readBuffer, sizeof(readBuffer)); // Dummy read
+        else {
+            write(connFD, PASSWORD_CHANGE_NEW_PASS_INVALID_MESSAGE, strlen(PASSWORD_CHANGE_NEW_PASS_INVALID_MESSAGE));
+            read(connFD, inputBuffer, sizeof(inputBuffer));
         }
     }
-    else
-    {
-        // Password doesn't match with old password
-        writeBytes = write(connFD, PASSWORD_CHANGE_OLD_PASS_INVALID, strlen(PASSWORD_CHANGE_OLD_PASS_INVALID));
-        readBytes = read(connFD, readBuffer, sizeof(readBuffer)); // Dummy read
+    else {
+        write(connFD, PASSWORD_CHANGE_OLD_PASS_INVALID_MESSAGE, strlen(PASSWORD_CHANGE_OLD_PASS_INVALID_MESSAGE));
+        read(connFD, inputBuffer, sizeof(inputBuffer));
     }
 
-    unlock_critical_section(&semOp);
+    unlockCriticalSection(&semOp, semID);
 
-    return false;
+    return 0;
 }
 
-bool lock_critical_section(struct sembuf *semOp)
-{
+int lockCriticalSection(struct sembuf *semOp, int semID) {
     semOp->sem_flg = SEM_UNDO;
     semOp->sem_op = -1;
     semOp->sem_num = 0;
-    int semopStatus = semop(semIdentifier, semOp, 1);
-    if (semopStatus == -1)
-    {
-        perror("Error while locking critical section");
-        return false;
-    }
-    return true;
+    semop(semID, semOp, 1);
+    return 1;
 }
 
-bool unlock_critical_section(struct sembuf *semOp)
-{
+int unlockCriticalSection(struct sembuf *semOp, int semID) {
     semOp->sem_op = 1;
-    int semopStatus = semop(semIdentifier, semOp, 1);
-    if (semopStatus == -1)
-    {
-        perror("Error while operating on semaphore!");
-        _exit(1);
-    }
-    return true;
+    semop(semID, semOp, 1);
+    return 1;
 }
 
-void write_transaction_to_array(int *transactionArray, int ID)
-{
-    // Check if there's any free space in the array to write the new transaction ID
-    int iter = 0;
-    while (transactionArray[iter] != -1)
-        iter++;
-
-    if (iter >= MAX_TRANSACTIONS)
-    {
-        // No space
-        for (iter = 1; iter < MAX_TRANSACTIONS; iter++)
-            // Shift elements one step back discarding the oldest transaction
-            transactionArray[iter - 1] = transactionArray[iter];
-        transactionArray[iter - 1] = ID;
-    }
-    else
-    {
-        // Space available
-        transactionArray[iter] = ID;
+void writeTransactionToArray(int *transactionArray, int ID) {
+    int i = 0;
+    while (transactionArray[i] != -1)
+        i++;
+    if (i >= MAX_TRANSACTIONS) {
+        for (i = 1; i < MAX_TRANSACTIONS; i++)
+            transactionArray[i - 1] = transactionArray[i];
+        transactionArray[i - 1] = ID;
+    } else {
+        transactionArray[i] = ID;
     }
 }
 
-int write_transaction_to_file(int accountNumber, long int oldBalance, long int newBalance, bool operation)
-{
+int writeTransactionToFile(int accountNumber, long int oldBalance, long int newBalance, int operation) {
     struct Transaction newTransaction;
     newTransaction.accountNumber = accountNumber;
     newTransaction.oldBalance = oldBalance;
@@ -526,25 +330,19 @@ int write_transaction_to_file(int accountNumber, long int oldBalance, long int n
     newTransaction.operation = operation;
     newTransaction.transactionTime = time(NULL);
 
-    ssize_t readBytes, writeBytes;
+    int transFD = open(TRANSACTION_FILE, O_CREAT | O_APPEND | O_RDWR, S_IRWXU);
 
-    int transactionFileDescriptor = open(TRANSACTION_FILE, O_CREAT | O_APPEND | O_RDWR, S_IRWXU);
-
-    // Get most recent transaction number
-    off_t offset = lseek(transactionFileDescriptor, -sizeof(struct Transaction), SEEK_END);
-    if (offset >= 0)
-    {
-        // There exists at least one transaction record
+    int offset = lseek(transFD, -sizeof(struct Transaction), SEEK_END);
+    if (offset >= 0) {
         struct Transaction prevTransaction;
-        readBytes = read(transactionFileDescriptor, &prevTransaction, sizeof(struct Transaction));
+        read(transFD, &prevTransaction, sizeof(struct Transaction));
 
         newTransaction.transactionID = prevTransaction.transactionID + 1;
     }
     else
-        // No transaction records exist
         newTransaction.transactionID = 0;
 
-    writeBytes = write(transactionFileDescriptor, &newTransaction, sizeof(struct Transaction));
+    write(transFD, &newTransaction, sizeof(struct Transaction));
 
     return newTransaction.transactionID;
 }

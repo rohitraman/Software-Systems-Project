@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <string.h>
-#include <stdbool.h>
 #include <sys/types.h>
 #include <sys/stat.h> 
 #include <fcntl.h>
@@ -11,431 +10,325 @@
 #include "./account.h"
 #include "./customer_struct.h"
 #include "./transaction.h"
-#include "./admin-credentials.h"
 #include "./constants.h"
 
 int loginHandler(int isAdmin, int connFD, struct Customer *ptrToCustomer);
-bool getAccountDetails(int connFD, struct Account *customerAccount);
-bool getCustomerDetails(int connFD, int customerID);
+int getAccountDetails(int connFD, struct Account *customerAccount);
+int getCustomerDetails(int connFD, int custID);
 
-int loginHandler(int isAdmin, int connFD, struct Customer *ptrToCustomerID) {
-    char readBuffer[1000], writeBuffer[1000];
-    char tempBuffer[1000];
+int loginHandler(int isAdmin, int connFD, struct Customer *ptrToCustomer) {
     struct Customer customer;
+    char inputBuffer[SIZE], outputBuffer[SIZE], buffer[SIZE];
+    int custID, found = 0;
 
-    int ID;
-
-    bzero(readBuffer, sizeof(readBuffer));
-    bzero(writeBuffer, sizeof(writeBuffer));
-
-    if (isAdmin)
-        strcpy(writeBuffer, ADMIN_LOGIN_SUCCESS);
+    if (isAdmin == 1)
+        strcpy(outputBuffer, ADMIN_LOGIN_SUCCESS);
     else
-        strcpy(writeBuffer, CUSTOMER_LOGIN_WELCOME);
+        strcpy(outputBuffer, CUSTOMER_LOGIN_WELCOME_MESSAGE);
 
-    strcat(writeBuffer, "\n");
-    strcat(writeBuffer, LOGIN_ID);
-    write(connFD, writeBuffer, strlen(writeBuffer));
-    read(connFD, readBuffer, sizeof(readBuffer));
+    strcat(outputBuffer, "\n");
+    strcat(outputBuffer, USERNAME);
+    write(connFD, outputBuffer, strlen(outputBuffer));
+    read(connFD, inputBuffer, sizeof(inputBuffer));
 
-    int userFound = 0;
+    if (isAdmin == 1) {
+        if (strcmp(inputBuffer, ADMIN_USERNAME) == 0)
+            found = 1;
+    } else {
+        strcpy(buffer, inputBuffer);
+        char* token = strtok(buffer, "-");
+        token = strtok(NULL, "-"); // strtok() stores the previous stored string as a static reference
+        custID = atoi(token);
 
-    if (isAdmin)
-    {
-        if (strcmp(readBuffer, ADMIN_LOGIN_ID) == 0)
-            userFound = 1;
-    }
-    else
-    {
-        bzero(tempBuffer, sizeof(tempBuffer));
-        strcpy(tempBuffer, readBuffer);
-        strtok(tempBuffer, "-");
-        ID = atoi(strtok(NULL, "-"));
-
-        int customerFileFD = open(CUSTOMER_FILE, O_RDONLY);
-        if (customerFileFD == -1) {
-            perror("Error opening customer file in read mode!");
+        int customerFD = open(CUSTOMER_FILE, O_RDONLY);
+        if (customerFD == -1) {
+            printf("Error opening customer file in read mode!");
             return 0;
         }
 
-        int offset = lseek(customerFileFD, ID * sizeof(struct Customer), SEEK_SET);
+        int offset = lseek(customerFD, custID * sizeof(struct Customer), SEEK_SET);
         if (offset >= 0) {
-            struct flock lock = {F_RDLCK, SEEK_SET, ID * sizeof(struct Customer), sizeof(struct Customer), getpid()};
-            fcntl(customerFileFD, F_SETLKW, &lock);
-            read(customerFileFD, &customer, sizeof(struct Customer));
+            struct flock lock;
+            lock.l_type = F_RDLCK;
+            lock.l_whence = SEEK_SET;
+            lock.l_start = custID * sizeof(struct Customer);
+            lock.l_len = sizeof(struct Customer);
+            lock.l_pid = getpid();
+
+            fcntl(customerFD, F_SETLKW, &lock);
+            read(customerFD, &customer, sizeof(struct Customer));
 
             lock.l_type = F_UNLCK;
-            fcntl(customerFileFD, F_SETLK, &lock);
+            fcntl(customerFD, F_SETLK, &lock);
 
-            if (strcmp(customer.login, readBuffer) == 0)
-                userFound = 1;
-            close(customerFileFD);
+            if (strcmp(customer.login, inputBuffer) == 0)
+                found = 1;
+            close(customerFD);
         }
         else {
-            write(connFD, CUSTOMER_LOGIN_ID_DOESNT_EXIT, strlen(CUSTOMER_LOGIN_ID_DOESNT_EXIT));
+            write(connFD, CUSTOMER_LOGIN_ID_DOESNT_EXIST, strlen(CUSTOMER_LOGIN_ID_DOESNT_EXIST));
         }
     }
 
-    if (userFound == 1) {
-        bzero(writeBuffer, sizeof(writeBuffer));
+    if (found == 1) {
         write(connFD, PASSWORD, strlen(PASSWORD));
 
-        bzero(readBuffer, sizeof(readBuffer));
-        read(connFD, readBuffer, sizeof(readBuffer));
-    
-        char hashedPassword[1000];
-        strcpy(hashedPassword, crypt(readBuffer, SALT_BAE));
+        bzero(inputBuffer, sizeof(inputBuffer));
+        read(connFD, inputBuffer, sizeof(inputBuffer));
 
         if (isAdmin == 1) {
-            if (strcmp(hashedPassword, ADMIN_PASSWORD) == 0)
+            if (strcmp(inputBuffer, ADMIN_PASSWORD) == 0)
                 return 1;
         }
         else {
-            if (strcmp(hashedPassword, customer.password) == 0) {
-                *ptrToCustomerID = customer;
+            if (strcmp(inputBuffer, customer.password) == 0) {
+                *ptrToCustomer = customer;
                 return 1;
             }
         }
-
-        bzero(writeBuffer, sizeof(writeBuffer));
         write(connFD, INVALID_PASSWORD, strlen(INVALID_PASSWORD));
     }
     else {
-        bzero(writeBuffer, sizeof(writeBuffer));
-        write(connFD, INVALID_LOGIN, strlen(INVALID_LOGIN));
+        write(connFD, INVALID_USERNAME, strlen(INVALID_USERNAME));
     }
 
     return 0;
 }
 
-bool getAccountDetails(int connFD, struct Account *customerAccount)
-{
-    ssize_t readBytes, writeBytes;            // Number of bytes read from / written to the socket
-    char readBuffer[1000], writeBuffer[1000]; // A buffer for reading from / writing to the socket
-    char tempBuffer[1000];
+int getAccountDetails(int connFD, struct Account *customerAccount) {
+    int readBytes;
+    char inputBuffer[SIZE], outputBuffer[10000], buffer[SIZE];
 
-    int accountNumber;
+    int accNo, accountFD;
     struct Account account;
-    int accountFileDescriptor;
 
-    if (customerAccount == NULL)
-    {
+    if (customerAccount == NULL) {
+        write(connFD, GET_ACCOUNT_NUMBER, strlen(GET_ACCOUNT_NUMBER));
 
-        writeBytes = write(connFD, GET_ACCOUNT_NUMBER, strlen(GET_ACCOUNT_NUMBER));
-        if (writeBytes == -1)
-        {
-            perror("Error writing GET_ACCOUNT_NUMBER message to client!");
-            return false;
-        }
+        bzero(inputBuffer, sizeof(inputBuffer));
+        read(connFD, inputBuffer, sizeof(inputBuffer));
 
-        bzero(readBuffer, sizeof(readBuffer));
-        readBytes = read(connFD, readBuffer, sizeof(readBuffer));
-        if (readBytes == -1)
-        {
-            perror("Error reading account number response from client!");
-            return false;
-        }
-
-        accountNumber = atoi(readBuffer);
+        accNo = atoi(inputBuffer);
     }
     else
-        accountNumber = customerAccount->accountNumber;
+        accNo = customerAccount->accNo;
 
-    accountFileDescriptor = open(ACCOUNT_FILE, O_RDONLY);
-    if (accountFileDescriptor == -1)
-    {
-        // Account record doesn't exist
-        bzero(writeBuffer, sizeof(writeBuffer));
-        strcpy(writeBuffer, ACCOUNT_ID_DOESNT_EXIT);
-        strcat(writeBuffer, "^");
-        perror("Error opening account file in get_account_details!");
-        writeBytes = write(connFD, writeBuffer, strlen(writeBuffer));
-        if (writeBytes == -1)
-        {
-            perror("Error while writing ACCOUNT_ID_DOESNT_EXIT message to client!");
-            return false;
-        }
-        readBytes = read(connFD, readBuffer, sizeof(readBuffer)); // Dummy read
-        return false;
+    accountFD = open(ACCOUNT_FILE, O_RDONLY);
+    if (accountFD == -1) {
+        bzero(outputBuffer, sizeof(outputBuffer));
+        strcpy(outputBuffer, ACCOUNT_ID_DOESNT_EXIT);
+        strcat(outputBuffer, "^");
+        printf("Error opening account file.");
+        write(connFD, outputBuffer, strlen(outputBuffer));
+        read(connFD, inputBuffer, sizeof(inputBuffer));
+        return 0;
     }
 
-    int offset = lseek(accountFileDescriptor, accountNumber * sizeof(struct Account), SEEK_SET);
-    if (offset == -1 && errno == EINVAL)
-    {
-        // Account record doesn't exist
-        bzero(writeBuffer, sizeof(writeBuffer));
-        strcpy(writeBuffer, ACCOUNT_ID_DOESNT_EXIT);
-        strcat(writeBuffer, "^");
-        perror("Error seeking to account record in get_account_details!");
-        writeBytes = write(connFD, writeBuffer, strlen(writeBuffer));
-        if (writeBytes == -1)
-        {
-            perror("Error while writing ACCOUNT_ID_DOESNT_EXIT message to client!");
-            return false;
-        }
-        readBytes = read(connFD, readBuffer, sizeof(readBuffer)); // Dummy read
-        return false;
+    int offset = lseek(accountFD, accNo * sizeof(struct Account), SEEK_SET);
+    if (offset == -1 && errno == EINVAL) {
+        bzero(outputBuffer, sizeof(outputBuffer));
+        strcpy(outputBuffer, ACCOUNT_ID_DOESNT_EXIT);
+        strcat(outputBuffer, "^");
+        printf("Error seeking to account record.");
+        write(connFD, outputBuffer, strlen(outputBuffer));
+        read(connFD, inputBuffer, sizeof(inputBuffer));
+        return 0;
     }
-    else if (offset == -1)
-    {
-        perror("Error while seeking to required account record!");
-        return false;
+    else if (offset == -1) {
+        printf("Error seeking to required account record!");
+        return 0;
     }
 
-    struct flock lock = {F_RDLCK, SEEK_SET, offset, sizeof(struct Account), getpid()};
+    struct flock lock;
+    lock.l_type = F_RDLCK;
+    lock.l_whence = SEEK_SET;
+    lock.l_start = offset;
+    lock.l_len = sizeof(struct Account);
+    lock.l_pid = getpid();
 
-    int lockingStatus = fcntl(accountFileDescriptor, F_SETLKW, &lock);
-    if (lockingStatus == -1)
-    {
-        perror("Error obtaining read lock on account record!");
-        return false;
-    }
+    fcntl(accountFD, F_SETLKW, &lock);
 
-    readBytes = read(accountFileDescriptor, &account, sizeof(struct Account));
-    if (readBytes == -1)
-    {
-        perror("Error reading account record from file!");
-        return false;
+    readBytes = read(accountFD, &account, sizeof(struct Account));
+    if (readBytes == -1) {
+        printf("Error reading account record from file!");
+        return 0;
     }
 
     lock.l_type = F_UNLCK;
-    fcntl(accountFileDescriptor, F_SETLK, &lock);
+    fcntl(accountFD, F_SETLK, &lock);
 
-    if (customerAccount != NULL)
-    {
+    if (customerAccount != NULL) {
         *customerAccount = account;
-        return true;
+        return 1;
     }
 
-    bzero(writeBuffer, sizeof(writeBuffer));
-    sprintf(writeBuffer, "Account Details - \n\tAccount Number : %d\n\tAccount Type : %s\n\tAccount Status : %s", account.accountNumber, (account.isRegularAccount ? "Regular" : "Joint"), (account.active) ? "Active" : "Deactived");
-    if (account.active)
-    {
-        sprintf(tempBuffer, "\n\tAccount Balance:₹ %ld", account.balance);
-        strcat(writeBuffer, tempBuffer);
+    bzero(outputBuffer, sizeof(outputBuffer));
+    sprintf(outputBuffer, "Account Details - \nAccount Number : %d\nAccount Type : %s\nAccount Status : %s", account.accNo, (account.isRegularAccount ? "Regular" : "Joint"), (account.active) ? "Active" : "Deactivated");
+    if (account.active == 1) {
+        sprintf(buffer, "\nAccount Balance:₹ %ld", account.balance);
+        strcat(outputBuffer, buffer);
     }
 
-    sprintf(tempBuffer, "\n\tPrimary Owner ID: %d", account.owners[0]);
-    strcat(writeBuffer, tempBuffer);
-    if (account.owners[1] != -1)
-    {
-        sprintf(tempBuffer, "\n\tSecondary Owner ID: %d", account.owners[1]);
-        strcat(writeBuffer, tempBuffer);
+    sprintf(buffer, "\nPrimary Customer ID: %d", account.customers[0]);
+    strcat(outputBuffer, buffer);
+    if (account.customers[1] != -1) {
+        sprintf(buffer, "\nSecondary Customer ID: %d", account.customers[1]);
+        strcat(outputBuffer, buffer);
     }
 
-    strcat(writeBuffer, "\n^");
+    strcat(outputBuffer, "\n^");
 
-    writeBytes = write(connFD, writeBuffer, strlen(writeBuffer));
-    readBytes = read(connFD, readBuffer, sizeof(readBuffer)); // Dummy read
+    write(connFD, outputBuffer, strlen(outputBuffer));
+    read(connFD, inputBuffer, sizeof(inputBuffer));
 
-    return true;
+    return 1;
 }
 
-bool getCustomerDetails(int connFD, int customerID)
-{
-    ssize_t readBytes, writeBytes;             // Number of bytes read from / written to the socket
-    char readBuffer[1000], writeBuffer[10000]; // A buffer for reading from / writing to the socket
-    char tempBuffer[1000];
+int getCustomerDetails(int connFD, int custID) {
+    int readBytes;
+    char inputBuffer[SIZE], outputBuffer[SIZE], buffer[SIZE];
 
     struct Customer customer;
-    int customerFileDescriptor;
-    struct flock lock = {F_RDLCK, SEEK_SET, 0, sizeof(struct Account), getpid()};
+    int custFD;
+    
+    struct flock lock;
+    lock.l_type = F_RDLCK;
+    lock.l_whence = SEEK_SET;
+    lock.l_start = 0;
+    lock.l_len = sizeof(struct Account);
+    lock.l_pid = getpid();
 
-    if (customerID == -1)
-    {
-        writeBytes = write(connFD, GET_CUSTOMER_ID, strlen(GET_CUSTOMER_ID));
-        if (writeBytes == -1)
-        {
-            perror("Error while writing GET_CUSTOMER_ID message to client!");
-            return false;
-        }
-
-        bzero(readBuffer, sizeof(readBuffer));
-        readBytes = read(connFD, readBuffer, sizeof(readBuffer));
-        if (readBytes == -1)
-        {
-            perror("Error getting customer ID from client!");
-            ;
-            return false;
-        }
-
-        customerID = atoi(readBuffer);
+    if (custID == -1) {
+        write(connFD, GET_CUSTOMER_ID, strlen(GET_CUSTOMER_ID));
+        bzero(inputBuffer, sizeof(inputBuffer));
+        read(connFD, inputBuffer, sizeof(inputBuffer));
+        custID = atoi(inputBuffer);
     }
 
-    customerFileDescriptor = open(CUSTOMER_FILE, O_RDONLY);
-    if (customerFileDescriptor == -1)
-    {
-        // Customer File doesn't exist
-        bzero(writeBuffer, sizeof(writeBuffer));
-        strcpy(writeBuffer, CUSTOMER_ID_DOESNT_EXIT);
-        strcat(writeBuffer, "^");
-        writeBytes = write(connFD, writeBuffer, strlen(writeBuffer));
-        if (writeBytes == -1)
-        {
-            perror("Error while writing CUSTOMER_ID_DOESNT_EXIT message to client!");
-            return false;
-        }
-        readBytes = read(connFD, readBuffer, sizeof(readBuffer)); // Dummy read
-        return false;
+    custFD = open(CUSTOMER_FILE, O_RDONLY);
+    if (custFD == -1) {
+        bzero(outputBuffer, sizeof(outputBuffer));
+        strcpy(outputBuffer, CUSTOMER_ID_DOESNT_EXIST);
+        strcat(outputBuffer, "^");
+        write(connFD, outputBuffer, strlen(outputBuffer));
+        read(connFD, inputBuffer, sizeof(inputBuffer));
+        return 0;
     }
-    int offset = lseek(customerFileDescriptor, customerID * sizeof(struct Customer), SEEK_SET);
-    if (errno == EINVAL)
-    {
-        // Customer record doesn't exist
-        bzero(writeBuffer, sizeof(writeBuffer));
-        strcpy(writeBuffer, CUSTOMER_ID_DOESNT_EXIT);
-        strcat(writeBuffer, "^");
-        writeBytes = write(connFD, writeBuffer, strlen(writeBuffer));
-        if (writeBytes == -1)
-        {
-            perror("Error while writing CUSTOMER_ID_DOESNT_EXIT message to client!");
-            return false;
-        }
-        readBytes = read(connFD, readBuffer, sizeof(readBuffer)); // Dummy read
-        return false;
-    }
-    else if (offset == -1)
-    {
-        perror("Error while seeking to required customer record!");
-        return false;
+    int offset = lseek(custFD, custID * sizeof(struct Customer), SEEK_SET);
+    if (errno == EINVAL) {
+        bzero(outputBuffer, sizeof(outputBuffer));
+        strcpy(outputBuffer, CUSTOMER_ID_DOESNT_EXIST);
+        strcat(outputBuffer, "^");
+        write(connFD, outputBuffer, strlen(outputBuffer));
+        read(connFD, inputBuffer, sizeof(inputBuffer));
+        return 0;
+    } else if (offset == -1) {
+        printf("Error while seeking to required customer record!");
+        return 0;
     }
     lock.l_start = offset;
 
-    int lockingStatus = fcntl(customerFileDescriptor, F_SETLKW, &lock);
-    if (lockingStatus == -1)
-    {
-        perror("Error while obtaining read lock on the Customer file!");
-        return false;
-    }
+    fcntl(custFD, F_SETLKW, &lock);
 
-    readBytes = read(customerFileDescriptor, &customer, sizeof(struct Customer));
-    if (readBytes == -1)
-    {
-        perror("Error reading customer record from file!");
-        return false;
+    readBytes = read(custFD, &customer, sizeof(struct Customer));
+    if (readBytes == -1) {
+        printf("Error reading customer record from file!");
+        return 0;
     }
 
     lock.l_type = F_UNLCK;
-    fcntl(customerFileDescriptor, F_SETLK, &lock);
+    fcntl(custFD, F_SETLK, &lock);
 
-    bzero(writeBuffer, sizeof(writeBuffer));
-    sprintf(writeBuffer, "Customer Details - \n\tID : %d\n\tName : %s\n\tGender : %c\n\tAge: %d\n\tAccount Number : %d\n\tLoginID : %s", customer.id, customer.name, customer.gender, customer.age, customer.account, customer.login);
+    bzero(outputBuffer, sizeof(outputBuffer));
+    sprintf(outputBuffer, "Customer Details - \nID : %d\nName : %s\nGender : %c\nAge: %d\nAccount Number : %d\nLoginID : %s", customer.id, customer.name, customer.gender, customer.age, customer.account, customer.login);
 
-    strcat(writeBuffer, "\n\nYou'll now be redirected to the main menu...^");
+    strcat(outputBuffer, "\n\nYou'll now be redirected to the main menu...^");
 
-    writeBytes = write(connFD, writeBuffer, strlen(writeBuffer));
-    if (writeBytes == -1)
-    {
-        perror("Error writing customer info to client!");
-        return false;
-    }
+    write(connFD, outputBuffer, strlen(outputBuffer));
 
-    readBytes = read(connFD, readBuffer, sizeof(readBuffer)); // Dummy read
-    return true;
+    read(connFD, inputBuffer, sizeof(inputBuffer));
+    return 1;
 }
 
-bool getTransactionDetails(int connFD, int accountNumber)
-{
+int getTransactionDetails(int connFD, int accNo) {
+    char inputBuffer[SIZE], outputBuffer[10000], buffer[SIZE];
 
-    ssize_t readBytes, writeBytes;                               // Number of bytes read from / written to the socket
-    char readBuffer[1000], writeBuffer[10000], tempBuffer[1000]; // A buffer for reading from / writing to the socket
-
+    int bytes;
     struct Account account;
 
-    if (accountNumber == -1)
-    {
-        // Get the accountNumber
-        writeBytes = write(connFD, GET_ACCOUNT_NUMBER, strlen(GET_ACCOUNT_NUMBER));
-        if (writeBytes == -1)
-        {
-            perror("Error writing GET_ACCOUNT_NUMBER message to client!");
-            return false;
-        }
+    if (accNo == -1) {
+        write(connFD, GET_ACCOUNT_NUMBER, strlen(GET_ACCOUNT_NUMBER));
 
-        bzero(readBuffer, sizeof(readBuffer));
-        readBytes = read(connFD, readBuffer, sizeof(readBuffer));
-        if (readBytes == -1)
-        {
-            perror("Error reading account number response from client!");
-            return false;
-        }
+        bzero(inputBuffer, sizeof(inputBuffer));
+        read(connFD, inputBuffer, sizeof(inputBuffer));
 
-        account.accountNumber = atoi(readBuffer);
+        account.accNo = atoi(inputBuffer);
     }
     else
-        account.accountNumber = accountNumber;
+        account.accNo = accNo;
 
-    if (getAccountDetails(connFD, &account))
-    {
+    if (getAccountDetails(connFD, &account) == 1) {
         int iter;
 
         struct Transaction transaction;
-        struct tm transactionTime;
+        struct tm* transactionTime;
 
-        bzero(writeBuffer, sizeof(readBuffer));
+        bzero(outputBuffer, sizeof(inputBuffer));
 
-        int transactionFileDescriptor = open(TRANSACTION_FILE, O_RDONLY);
-        if (transactionFileDescriptor == -1)
-        {
-            perror("Error while opening transaction file!");
+        int transFD = open(TRANSACTION_FILE, O_RDONLY);
+        if (transFD == -1) {
+            printf("Error while opening transaction file!");
             write(connFD, TRANSACTIONS_NOT_FOUND, strlen(TRANSACTIONS_NOT_FOUND));
-            read(connFD, readBuffer, sizeof(readBuffer)); // Dummy read
-            return false;
+            read(connFD, inputBuffer, sizeof(inputBuffer));
+            return 0;
         }
 
-        for (iter = 0; iter < MAX_TRANSACTIONS && account.transactions[iter] != -1; iter++)
-        {
-
-            int offset = lseek(transactionFileDescriptor, account.transactions[iter] * sizeof(struct Transaction), SEEK_SET);
-            if (offset == -1)
-            {
-                perror("Error while seeking to required transaction record!");
-                return false;
+        for (iter = 0; iter < MAX_TRANSACTIONS && account.transactions[iter] != -1; iter++) {
+            int offset = lseek(transFD, account.transactions[iter] * sizeof(struct Transaction), SEEK_SET);
+            if (offset == -1) {
+                printf("Error while seeking to required transaction record!");
+                return 0;
             }
 
-            struct flock lock = {F_RDLCK, SEEK_SET, offset, sizeof(struct Transaction), getpid()};
+            struct flock lock;
+            lock.l_type = F_RDLCK;
+            lock.l_whence = SEEK_SET;
+            lock.l_start = offset;
+            lock.l_len = sizeof(struct Transaction);
+            lock.l_pid = getpid();
 
-            int lockingStatus = fcntl(transactionFileDescriptor, F_SETLKW, &lock);
-            if (lockingStatus == -1)
-            {
-                perror("Error obtaining read lock on transaction record!");
-                return false;
-            }
+            fcntl(transFD, F_SETLKW, &lock);
 
-            readBytes = read(transactionFileDescriptor, &transaction, sizeof(struct Transaction));
-            if (readBytes == -1)
-            {
-                perror("Error reading transaction record from file!");
-                return false;
+            bytes = read(transFD, &transaction, sizeof(struct Transaction));
+            if (bytes == -1) {
+                printf("Error reading records from file!");
+                return 0;
             }
 
             lock.l_type = F_UNLCK;
-            fcntl(transactionFileDescriptor, F_SETLK, &lock);
+            fcntl(transFD, F_SETLK, &lock);
+            time_t temp = transaction.transactionTime;
+            transactionTime = localtime(&temp);
 
-            transactionTime = *localtime(&(transaction.transactionTime));
+            bzero(buffer, sizeof(buffer));
+            sprintf(buffer, "Details of transaction %d - \n\t Date : %d:%d %d/%d/%d \n Operation : %s \n Balance - \n\t Before : %ld \n\t After : %ld \n\t Difference : %ld\n", (iter + 1), transactionTime -> tm_hour, transactionTime -> tm_min, transactionTime -> tm_mday, transactionTime -> tm_mon, transactionTime -> tm_year, (transaction.operation == 1 ? "Deposit" : "Withdraw"), transaction.oldBalance, transaction.newBalance, (transaction.newBalance - transaction.oldBalance));
 
-            bzero(tempBuffer, sizeof(tempBuffer));
-            sprintf(tempBuffer, "Details of transaction %d - \n\t Date : %d:%d %d/%d/%d \n\t Operation : %s \n\t Balance - \n\t\t Before : %ld \n\t\t After : %ld \n\t\t Difference : %ld\n", (iter + 1), transactionTime.tm_hour, transactionTime.tm_min, transactionTime.tm_mday, transactionTime.tm_mon, transactionTime.tm_year, (transaction.operation ? "Deposit" : "Withdraw"), transaction.oldBalance, transaction.newBalance, (transaction.newBalance - transaction.oldBalance));
-
-            if (strlen(writeBuffer) == 0)
-                strcpy(writeBuffer, tempBuffer);
+            if (strlen(outputBuffer) == 0)
+                strcpy(outputBuffer, buffer);
             else
-                strcat(writeBuffer, tempBuffer);
+                strcat(outputBuffer, buffer);
         }
 
-        close(transactionFileDescriptor);
+        close(transFD);
 
-        if (strlen(writeBuffer) == 0)
-        {
+        if (strlen(outputBuffer) == 0) {
             write(connFD, TRANSACTIONS_NOT_FOUND, strlen(TRANSACTIONS_NOT_FOUND));
-            read(connFD, readBuffer, sizeof(readBuffer)); // Dummy read
-            return false;
-        }
-        else
-        {
-            strcat(writeBuffer, "^");
-            writeBytes = write(connFD, writeBuffer, strlen(writeBuffer));
-            read(connFD, readBuffer, sizeof(readBuffer)); // Dummy read
+            read(connFD, inputBuffer, sizeof(inputBuffer));
+            return 0;
+        } else {
+            strcat(outputBuffer, "^");
+            write(connFD, outputBuffer, strlen(outputBuffer));
+            read(connFD, inputBuffer, sizeof(inputBuffer));
         }
     }
 }
