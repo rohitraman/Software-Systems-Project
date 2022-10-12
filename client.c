@@ -8,8 +8,7 @@
 #include <string.h>
 
 
-void main()
-{
+void main() {
     int sockFD;
     struct sockaddr_in serverAddress;
     struct sockaddr server;
@@ -25,53 +24,42 @@ void main()
     char inputBuffer[1000], outputBuffer[1000];
     int readBytes, writeBytes;
 
-    char tempBuffer[1000];
+    char buffer[1000];
 
-    do
-    {
-        bzero(inputBuffer, sizeof(inputBuffer)); // Empty the read buffer
-        bzero(tempBuffer, sizeof(tempBuffer));
+    do {
+        bzero(inputBuffer, sizeof(inputBuffer));
+        bzero(buffer, sizeof(buffer));
         readBytes = read(sockFD, inputBuffer, sizeof(inputBuffer));
         if (readBytes == -1)
-            perror("Error while reading from client socket!");
+            printf("Read error");
         else if (readBytes == 0)
-            printf("No error received from server! Closing the connection to the server now!\n");
-        else if (strchr(inputBuffer, '^') != NULL)
-        {
-            // Skip read from client
-            strncpy(tempBuffer, inputBuffer, strlen(inputBuffer) - 1);
-            printf("%s\n", tempBuffer);
-            writeBytes = write(sockFD, "^", strlen("^"));
-            if (writeBytes == -1)
-            {
-                perror("Error while writing to client socket!");
-                break;
-            }
-        }
-        else if (strchr(inputBuffer, '$') != NULL)
-        {
-            // Server sent an error message and is now closing it's end of the connection
-            strncpy(tempBuffer, inputBuffer, strlen(inputBuffer) - 2);
-            printf("%s\n", tempBuffer);
+            printf("No read available from server\n");
+        else if (strchr(inputBuffer, '^') != NULL) {
+            // Makes sure that, to return to main menu without being stuck, we use some identifier to make sure that it returns to main menu, else it is stuck
+            strncpy(buffer, inputBuffer, strlen(inputBuffer) - 1);
+            printf("%s\n", buffer);
+            write(sockFD, "^", strlen("^"));
+        } else if (strchr(inputBuffer, '$') != NULL) {
+            // Used for terminating connection
+            strncpy(buffer, inputBuffer, strlen(inputBuffer) - 2);
+            printf("%s\n", buffer);
             printf("Closing the connection to the server now!\n");
             break;
         }
-        else
-        {
-            bzero(outputBuffer, sizeof(outputBuffer)); // Empty the write buffer
-
+        else {
+            bzero(outputBuffer, sizeof(outputBuffer));
+            // Hiding password
             if (strchr(inputBuffer, '#') != NULL)
                 strcpy(outputBuffer, getpass(inputBuffer));
-            else
-            {
+            else {
+                // Take normal inputs
                 printf("%s\n", inputBuffer);
-                scanf("%[^\n]%*c", outputBuffer); // Take user input!
+                scanf("%[^\n]%*c", outputBuffer);
             }
 
             writeBytes = write(sockFD, outputBuffer, strlen(outputBuffer));
-            if (writeBytes == -1)
-            {
-                perror("Error while writing to client socket!");
+            if (writeBytes == -1) {
+                printf("Error while writing to client socket!");
                 printf("Closing the connection to the server now!\n");
                 break;
             }

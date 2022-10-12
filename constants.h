@@ -56,3 +56,6 @@
 #define ACCOUNT_FILE "./accounts.bank"
 #define CUSTOMER_FILE "./customers.bank"
 #define TRANSACTION_FILE "./transactions.bank"
+
+#define ADMIN_USERNAME "admin"
+#define ADMIN_PASSWORD "password"
