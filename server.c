@@ -15,8 +15,7 @@
 #include "./customer.h"
 
 
-void main()
-{
+void main() {
     int sockFD, nsd;
     struct sockaddr_in serverAddress, clientAddress;
 
