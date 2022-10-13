@@ -6,7 +6,7 @@ union semun {
     struct semid_ds *buf;
     unsigned short  *array;
     struct seminfo  *__buf;
-} semSet;
+} arg;
 
 int lockCriticalSection(struct sembuf *semOp, int semID) {
     semOp->sem_flg = SEM_UNDO;
@@ -283,8 +283,8 @@ int customerLoginHandler(int connFD) {
         int semID = semget(semKey, 1, 0);
         if (semID == -1) {
             semID = semget(semKey, 1, IPC_CREAT | 0700);
-            semSet.val = 1;
-            semctl(semID, 0, SETVAL, semSet);
+            arg.val = 1;
+            semctl(semID, 0, SETVAL, arg);
         }
 
         strcpy(outputBuffer, CUSTOMER_LOGIN_SUCCESS_MESSAGE);
