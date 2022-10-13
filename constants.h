@@ -54,9 +54,9 @@
 #define PASSWORD_CHANGE_NEW_PASS_INVALID_MESSAGE "The passwords do not match.^"
 #define PASSWORD_CHANGE_SUCCESS_MESSAGE "Password successfully changed.^"
 #define WRONG_OPTION_SELECTED "Wrong option selected. Please select again."
-#define ACCOUNT_FILE "./accounts"
-#define CUSTOMER_FILE "./customers"
-#define TRANSACTION_FILE "./transactions"
+#define ACCOUNT_FILE "./accounts_file"
+#define CUSTOMER_FILE "./customers_file"
+#define TRANSACTION_FILE "./transactions_file"
 
 #define ADMIN_USERNAME "admin"
 #define ADMIN_PASSWORD "password"
