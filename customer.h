@@ -35,12 +35,12 @@ void writeTransactionToArray(int *transactionArray, int ID) {
 }
 
 int writeTransactionToFile(int accountNumber, long int oldBalance, long int newBalance, int operation) {
-    struct Transaction newTransaction;
-    newTransaction.accountNumber = accountNumber;
-    newTransaction.oldBalance = oldBalance;
-    newTransaction.newBalance = newBalance;
-    newTransaction.operation = operation;
-    newTransaction.transactionTime = time(NULL);
+    struct Transaction newTrans;
+    newTrans.accountNumber = accountNumber;
+    newTrans.oldBalance = oldBalance;
+    newTrans.newBalance = newBalance;
+    newTrans.operation = operation;
+    newTrans.transactionTime = time(NULL);
 
     int transFD = open(TRANSACTION_FILE, O_CREAT | O_APPEND | O_RDWR, S_IRWXU);
 
@@ -49,14 +49,14 @@ int writeTransactionToFile(int accountNumber, long int oldBalance, long int newB
         struct Transaction prevTransaction;
         read(transFD, &prevTransaction, sizeof(struct Transaction));
 
-        newTransaction.transactionID = prevTransaction.transactionID + 1;
+        newTrans.transactionID = prevTransaction.transactionID + 1;
     }
     else
-        newTransaction.transactionID = 0;
+        newTrans.transactionID = 0;
 
-    write(transFD, &newTransaction, sizeof(struct Transaction));
+    write(transFD, &newTrans, sizeof(struct Transaction));
 
-    return newTransaction.transactionID;
+    return newTrans.transactionID;
 }
 int retreiveBalance(int connFD, int semID, struct Customer loggedInCustomer) {
     char buffer[1000];
