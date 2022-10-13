@@ -126,7 +126,7 @@ int getCustomerDetails(int connFD, int custID) {
     int readBytes;
     char inputBuffer[SIZE], outputBuffer[SIZE], buffer[SIZE];
 
-    struct Customer customer;
+    struct Customer cust;
     int custFD;
     
     struct flock lock;
@@ -168,7 +168,7 @@ int getCustomerDetails(int connFD, int custID) {
 
     fcntl(custFD, F_SETLKW, &lock);
 
-    readBytes = read(custFD, &customer, sizeof(struct Customer));
+    readBytes = read(custFD, &cust, sizeof(struct Customer));
     if (readBytes == -1) {
         printf("Error reading customer record from file!");
         return 0;
@@ -178,9 +178,9 @@ int getCustomerDetails(int connFD, int custID) {
     fcntl(custFD, F_SETLK, &lock);
 
     bzero(outputBuffer, sizeof(outputBuffer));
-    sprintf(outputBuffer, "Customer Details - \nID : %d\nName : %s\nGender : %c\nAge: %d\nAccount Number : %d\nLoginID : %s", customer.id, customer.name, customer.gender, customer.age, customer.account, customer.login);
+    sprintf(outputBuffer, "Customer Details - \nID : %d\nName : %s\nGender : %c\nAge: %d\nAccount Number : %d\nLoginID : %s", cust.id, cust.name, cust.gender, cust.age, cust.account, cust.login);
 
-    strcat(outputBuffer, "\n\nYou'll now be redirected to the main menu...^");
+    strcat(outputBuffer, "\n\nRedirecting to the main menu...^");
 
     write(connFD, outputBuffer, strlen(outputBuffer));
 
@@ -271,7 +271,7 @@ int getTransactionDetails(int connFD, int accNo) {
     }
 }
 int loginHandler(int isAdmin, int connFD, struct Customer *ptrToCustomer) {
-    struct Customer customer;
+    struct Customer cust;
     char inputBuffer[SIZE], outputBuffer[SIZE], buffer[SIZE];
     int custID, found = 0;
 
@@ -310,12 +310,12 @@ int loginHandler(int isAdmin, int connFD, struct Customer *ptrToCustomer) {
             lock.l_pid = getpid();
 
             fcntl(customerFD, F_SETLKW, &lock);
-            read(customerFD, &customer, sizeof(struct Customer));
+            read(customerFD, &cust, sizeof(struct Customer));
 
             lock.l_type = F_UNLCK;
             fcntl(customerFD, F_SETLK, &lock);
 
-            if (strcmp(customer.login, inputBuffer) == 0)
+            if (strcmp(cust.login, inputBuffer) == 0)
                 found = 1;
             close(customerFD);
         }
@@ -335,8 +335,8 @@ int loginHandler(int isAdmin, int connFD, struct Customer *ptrToCustomer) {
                 return 1;
         }
         else {
-            if (strcmp(inputBuffer, customer.password) == 0) {
-                *ptrToCustomer = customer;
+            if (strcmp(inputBuffer, cust.password) == 0) {
+                *ptrToCustomer = cust;
                 return 1;
             }
         }
