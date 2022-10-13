@@ -1,79 +1,79 @@
 #include <sys/ipc.h>
 #include <sys/sem.h>
 
-int customerLoginHandler(int connFD);
-int depositAmount(int connFD, int semID, struct Customer loggedInCustomer);
-int withdrawAmount(int connFD, int semID, struct Customer loggedInCustomer);
-int retreiveBalance(int connFD, int semID, struct Customer loggedInCustomer);
-int changePassword(int connFD, int semID, struct Customer loggedInCustomer);
-void writeTransactionToArray(int *transactionArray, int ID);
-int writeTransactionToFile(int accountNumber, long int oldBalance, long int newBalance, int operation);
-int lockCriticalSection(struct sembuf *semOp, int semID);
-int unlockCriticalSection(struct sembuf *semOp, int semID);
-
- union semun 
- {
+union semun {
     int val;
     struct semid_ds *buf;
     unsigned short  *array;
     struct seminfo  *__buf;
 } semSet;
 
-int customerLoginHandler(int connFD) {
-    struct Customer loggedInCustomer;
-    if (loginHandler(0, connFD, &loggedInCustomer) == 1) {
-        char inputBuffer[1000], outputBuffer[1000];
+int lockCriticalSection(struct sembuf *semOp, int semID) {
+    semOp->sem_flg = SEM_UNDO;
+    semOp->sem_op = -1;
+    semOp->sem_num = 0;
+    semop(semID, semOp, 1);
+    return 1;
+}
 
-        int semKey = ftok(".", loggedInCustomer.account);
+int unlockCriticalSection(struct sembuf *semOp, int semID) {
+    semOp->sem_op = 1;
+    semop(semID, semOp, 1);
+    return 1;
+}
+void writeTransactionToArray(int *transactionArray, int ID) {
+    int i = 0;
+    while (transactionArray[i] != -1)
+        i++;
+    if (i >= MAX_TRANSACTIONS) {
+        for (i = 1; i < MAX_TRANSACTIONS; i++)
+            transactionArray[i - 1] = transactionArray[i];
+        transactionArray[i - 1] = ID;
+    } else {
+        transactionArray[i] = ID;
+    }
+}
 
-        int semID = semget(semKey, 1, 0);
-        if (semID == -1) {
-            semID = semget(semKey, 1, IPC_CREAT | 0700);
-            semSet.val = 1;
-            semctl(semID, 0, SETVAL, semSet);
+int writeTransactionToFile(int accountNumber, long int oldBalance, long int newBalance, int operation) {
+    struct Transaction newTransaction;
+    newTransaction.accountNumber = accountNumber;
+    newTransaction.oldBalance = oldBalance;
+    newTransaction.newBalance = newBalance;
+    newTransaction.operation = operation;
+    newTransaction.transactionTime = time(NULL);
+
+    int transFD = open(TRANSACTION_FILE, O_CREAT | O_APPEND | O_RDWR, S_IRWXU);
+
+    int offset = lseek(transFD, -sizeof(struct Transaction), SEEK_END);
+    if (offset >= 0) {
+        struct Transaction prevTransaction;
+        read(transFD, &prevTransaction, sizeof(struct Transaction));
+
+        newTransaction.transactionID = prevTransaction.transactionID + 1;
+    }
+    else
+        newTransaction.transactionID = 0;
+
+    write(transFD, &newTransaction, sizeof(struct Transaction));
+
+    return newTransaction.transactionID;
+}
+int retreiveBalance(int connFD, int semID, struct Customer loggedInCustomer) {
+    char buffer[1000];
+    struct Account account;
+    account.accNo = loggedInCustomer.account;
+    if (getAccountDetails(connFD, &account)) {
+        if (account.active) {
+            sprintf(buffer, "You have ₹ %ld in your account!^", account.balance);
+            write(connFD, buffer, strlen(buffer));
         }
-
-        strcpy(outputBuffer, CUSTOMER_LOGIN_SUCCESS_MESSAGE);
-        while (1) {
-            strcat(outputBuffer, "\n");
-            strcat(outputBuffer, CUSTOMER_MENU);
-            write(connFD, outputBuffer, strlen(outputBuffer));
-            bzero(outputBuffer, sizeof(outputBuffer));
-
-            bzero(inputBuffer, sizeof(inputBuffer));
-            read(connFD, inputBuffer, sizeof(inputBuffer));
-            
-            int opt = atoi(inputBuffer);
-            switch (opt)
-            {
-                case 1:
-                    getCustomerDetails(connFD, loggedInCustomer.id);
-                    break;
-                case 2:
-                    depositAmount(connFD, semID, loggedInCustomer);
-                    break;
-                case 3:
-                    withdrawAmount(connFD, semID, loggedInCustomer);
-                    break;
-                case 4:
-                    retreiveBalance(connFD, semID, loggedInCustomer);
-                    break;
-                case 5:
-                    getTransactionDetails(connFD, loggedInCustomer.account);
-                    break;
-                case 6:
-                    changePassword(connFD, semID, loggedInCustomer);
-                    break;
-                default:
-                    write(connFD, CUSTOMER_LOGOUT_MESSAGE, strlen(CUSTOMER_LOGOUT_MESSAGE));
-                    return 0;
-            }
-        }
+        else
+            write(connFD, ACCOUNT_DEACTIVATED_MESSAGE, strlen(ACCOUNT_DEACTIVATED_MESSAGE));
+        read(connFD, buffer, sizeof(buffer));
     }
     else {
         return 0;
     }
-    return 1;
 }
 
 int depositAmount(int connFD, int semID, struct Customer loggedInCustomer) {
@@ -119,7 +119,6 @@ int depositAmount(int connFD, int semID, struct Customer loggedInCustomer) {
 
                 write(connFD, DEPOSIT_AMOUNT_SUCCESS_MESSAGE, strlen(DEPOSIT_AMOUNT_SUCCESS_MESSAGE));
                 read(connFD, inputBuffer, sizeof(inputBuffer));
-                // retreiveBalance(connFD, semID, loggedInCustomer);
                 unlockCriticalSection(&semOp, semID);
                 return 1;
             }
@@ -185,8 +184,6 @@ int withdrawAmount(int connFD, int semID, struct Customer loggedInCustomer) {
                 write(connFD, WITHDRAW_AMOUNT_SUCCESS_MESSAGE, strlen(WITHDRAW_AMOUNT_SUCCESS_MESSAGE));
                 read(connFD, inputBuffer, sizeof(inputBuffer));
 
-                // retreiveBalance(connFD, semID, loggedInCustomer);
-
                 unlockCriticalSection(&semOp, semID);
 
                 return 1;
@@ -202,24 +199,6 @@ int withdrawAmount(int connFD, int semID, struct Customer loggedInCustomer) {
     }
     else {
         unlockCriticalSection(&semOp, semID);
-        return 0;
-    }
-}
-
-int retreiveBalance(int connFD, int semID, struct Customer loggedInCustomer) {
-    char buffer[1000];
-    struct Account account;
-    account.accNo = loggedInCustomer.account;
-    if (getAccountDetails(connFD, &account)) {
-        if (account.active) {
-            sprintf(buffer, "You have ₹ %ld in your account!^", account.balance);
-            write(connFD, buffer, strlen(buffer));
-        }
-        else
-            write(connFD, ACCOUNT_DEACTIVATED_MESSAGE, strlen(ACCOUNT_DEACTIVATED_MESSAGE));
-        read(connFD, buffer, sizeof(buffer));
-    }
-    else {
         return 0;
     }
 }
@@ -294,55 +273,62 @@ int changePassword(int connFD, int semID, struct Customer loggedInCustomer) {
 
     return 0;
 }
+int customerLoginHandler(int connFD) {
+    struct Customer loggedInCustomer;
+    if (loginHandler(0, connFD, &loggedInCustomer) == 1) {
+        char inputBuffer[1000], outputBuffer[1000];
 
-int lockCriticalSection(struct sembuf *semOp, int semID) {
-    semOp->sem_flg = SEM_UNDO;
-    semOp->sem_op = -1;
-    semOp->sem_num = 0;
-    semop(semID, semOp, 1);
-    return 1;
-}
+        int semKey = ftok(".", loggedInCustomer.account);
 
-int unlockCriticalSection(struct sembuf *semOp, int semID) {
-    semOp->sem_op = 1;
-    semop(semID, semOp, 1);
-    return 1;
-}
+        int semID = semget(semKey, 1, 0);
+        if (semID == -1) {
+            semID = semget(semKey, 1, IPC_CREAT | 0700);
+            semSet.val = 1;
+            semctl(semID, 0, SETVAL, semSet);
+        }
 
-void writeTransactionToArray(int *transactionArray, int ID) {
-    int i = 0;
-    while (transactionArray[i] != -1)
-        i++;
-    if (i >= MAX_TRANSACTIONS) {
-        for (i = 1; i < MAX_TRANSACTIONS; i++)
-            transactionArray[i - 1] = transactionArray[i];
-        transactionArray[i - 1] = ID;
-    } else {
-        transactionArray[i] = ID;
+        strcpy(outputBuffer, CUSTOMER_LOGIN_SUCCESS_MESSAGE);
+        while (1) {
+            strcat(outputBuffer, "\n");
+            strcat(outputBuffer, CUSTOMER_MENU);
+            write(connFD, outputBuffer, strlen(outputBuffer));
+            bzero(outputBuffer, sizeof(outputBuffer));
+
+            bzero(inputBuffer, sizeof(inputBuffer));
+            read(connFD, inputBuffer, sizeof(inputBuffer));
+            
+            int opt = atoi(inputBuffer);
+            switch (opt)
+            {
+                case 1:
+                    getCustomerDetails(connFD, loggedInCustomer.id);
+                    break;
+                case 2:
+                    depositAmount(connFD, semID, loggedInCustomer);
+                    break;
+                case 3:
+                    withdrawAmount(connFD, semID, loggedInCustomer);
+                    break;
+                case 4:
+                    retreiveBalance(connFD, semID, loggedInCustomer);
+                    break;
+                case 5:
+                    getTransactionDetails(connFD, loggedInCustomer.account);
+                    break;
+                case 6:
+                    changePassword(connFD, semID, loggedInCustomer);
+                    break;
+                case 7: 
+                    write(connFD, CUSTOMER_LOGOUT_MESSAGE, strlen(CUSTOMER_LOGOUT_MESSAGE));
+                    return 0;
+                default:
+                    write(connFD, WRONG_OPTION_SELECTED, strlen(WRONG_OPTION_SELECTED));
+                    break;
+            }
+        }
     }
-}
-
-int writeTransactionToFile(int accountNumber, long int oldBalance, long int newBalance, int operation) {
-    struct Transaction newTransaction;
-    newTransaction.accountNumber = accountNumber;
-    newTransaction.oldBalance = oldBalance;
-    newTransaction.newBalance = newBalance;
-    newTransaction.operation = operation;
-    newTransaction.transactionTime = time(NULL);
-
-    int transFD = open(TRANSACTION_FILE, O_CREAT | O_APPEND | O_RDWR, S_IRWXU);
-
-    int offset = lseek(transFD, -sizeof(struct Transaction), SEEK_END);
-    if (offset >= 0) {
-        struct Transaction prevTransaction;
-        read(transFD, &prevTransaction, sizeof(struct Transaction));
-
-        newTransaction.transactionID = prevTransaction.transactionID + 1;
+    else {
+        return 0;
     }
-    else
-        newTransaction.transactionID = 0;
-
-    write(transFD, &newTransaction, sizeof(struct Transaction));
-
-    return newTransaction.transactionID;
+    return 1;
 }

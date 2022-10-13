@@ -41,7 +41,7 @@ void main() {
             // Used for terminating connection
             strncpy(buffer, inputBuffer, strlen(inputBuffer) - 2);
             printf("%s\n", buffer);
-            printf("Closing the connection to the server now!\n");
+            printf("Connection terminated.\n");
             break;
         }
         else {
@@ -58,7 +58,7 @@ void main() {
             writeBytes = write(sockFD, outputBuffer, strlen(outputBuffer));
             if (writeBytes == -1) {
                 printf("Error while writing to client socket!");
-                printf("Closing the connection to the server now!\n");
+                printf("Connection terminated.\n");
                 break;
             }
         }

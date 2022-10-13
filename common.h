@@ -7,94 +7,34 @@
 #include <stdlib.h>
 #include <errno.h>
 
-#include "./account.h"
-#include "./customer_struct.h"
-#include "./transaction.h"
 #include "./constants.h"
+#include <time.h>
 
-int loginHandler(int isAdmin, int connFD, struct Customer *ptrToCustomer);
-int getAccountDetails(int connFD, struct Account *customerAccount);
-int getCustomerDetails(int connFD, int custID);
-
-int loginHandler(int isAdmin, int connFD, struct Customer *ptrToCustomer) {
-    struct Customer customer;
-    char inputBuffer[SIZE], outputBuffer[SIZE], buffer[SIZE];
-    int custID, found = 0;
-
-    if (isAdmin == 1)
-        strcpy(outputBuffer, ADMIN_LOGIN_SUCCESS);
-    else
-        strcpy(outputBuffer, CUSTOMER_LOGIN_WELCOME_MESSAGE);
-
-    strcat(outputBuffer, "\n");
-    strcat(outputBuffer, USERNAME);
-    write(connFD, outputBuffer, strlen(outputBuffer));
-    read(connFD, inputBuffer, sizeof(inputBuffer));
-
-    if (isAdmin == 1) {
-        if (strcmp(inputBuffer, ADMIN_USERNAME) == 0)
-            found = 1;
-    } else {
-        strcpy(buffer, inputBuffer);
-        char* token = strtok(buffer, "-");
-        token = strtok(NULL, "-"); // strtok() stores the previous stored string as a static reference
-        custID = atoi(token);
-
-        int customerFD = open(CUSTOMER_FILE, O_RDONLY);
-        if (customerFD == -1) {
-            printf("Error opening customer file in read mode!");
-            return 0;
-        }
-
-        int offset = lseek(customerFD, custID * sizeof(struct Customer), SEEK_SET);
-        if (offset >= 0) {
-            struct flock lock;
-            lock.l_type = F_RDLCK;
-            lock.l_whence = SEEK_SET;
-            lock.l_start = custID * sizeof(struct Customer);
-            lock.l_len = sizeof(struct Customer);
-            lock.l_pid = getpid();
-
-            fcntl(customerFD, F_SETLKW, &lock);
-            read(customerFD, &customer, sizeof(struct Customer));
-
-            lock.l_type = F_UNLCK;
-            fcntl(customerFD, F_SETLK, &lock);
-
-            if (strcmp(customer.login, inputBuffer) == 0)
-                found = 1;
-            close(customerFD);
-        }
-        else {
-            write(connFD, CUSTOMER_LOGIN_ID_DOESNT_EXIST, strlen(CUSTOMER_LOGIN_ID_DOESNT_EXIST));
-        }
-    }
-
-    if (found == 1) {
-        write(connFD, PASSWORD, strlen(PASSWORD));
-
-        bzero(inputBuffer, sizeof(inputBuffer));
-        read(connFD, inputBuffer, sizeof(inputBuffer));
-
-        if (isAdmin == 1) {
-            if (strcmp(inputBuffer, ADMIN_PASSWORD) == 0)
-                return 1;
-        }
-        else {
-            if (strcmp(inputBuffer, customer.password) == 0) {
-                *ptrToCustomer = customer;
-                return 1;
-            }
-        }
-        write(connFD, INVALID_PASSWORD, strlen(INVALID_PASSWORD));
-    }
-    else {
-        write(connFD, INVALID_USERNAME, strlen(INVALID_USERNAME));
-    }
-
-    return 0;
-}
-
+struct Account {
+    int accNo;
+    int customers[2];
+    int isRegularAccount;
+    int active;
+    long int balance;
+    int transactions[10];
+};
+struct Transaction {
+    int transactionID;
+    int accountNumber;
+    int operation;
+    long int oldBalance;
+    long int newBalance;
+    time_t transactionTime;
+};
+struct Customer {
+    int id;
+    char name[25];
+    char gender;
+    int age;
+    char login[30];
+    char password[30];
+    int account;
+};
 int getAccountDetails(int connFD, struct Account *customerAccount) {
     int readBytes;
     char inputBuffer[SIZE], outputBuffer[10000], buffer[SIZE];
@@ -116,9 +56,8 @@ int getAccountDetails(int connFD, struct Account *customerAccount) {
     accountFD = open(ACCOUNT_FILE, O_RDONLY);
     if (accountFD == -1) {
         bzero(outputBuffer, sizeof(outputBuffer));
-        strcpy(outputBuffer, ACCOUNT_ID_DOESNT_EXIT);
+        strcpy(outputBuffer, "Error opening account file.");
         strcat(outputBuffer, "^");
-        printf("Error opening account file.");
         write(connFD, outputBuffer, strlen(outputBuffer));
         read(connFD, inputBuffer, sizeof(inputBuffer));
         return 0;
@@ -129,7 +68,6 @@ int getAccountDetails(int connFD, struct Account *customerAccount) {
         bzero(outputBuffer, sizeof(outputBuffer));
         strcpy(outputBuffer, ACCOUNT_ID_DOESNT_EXIT);
         strcat(outputBuffer, "^");
-        printf("Error seeking to account record.");
         write(connFD, outputBuffer, strlen(outputBuffer));
         read(connFD, inputBuffer, sizeof(inputBuffer));
         return 0;
@@ -268,9 +206,9 @@ int getTransactionDetails(int connFD, int accNo) {
         account.accNo = accNo;
 
     if (getAccountDetails(connFD, &account) == 1) {
-        int iter;
+        int i;
 
-        struct Transaction transaction;
+        struct Transaction trans;
         struct tm* transactionTime;
 
         bzero(outputBuffer, sizeof(inputBuffer));
@@ -283,8 +221,8 @@ int getTransactionDetails(int connFD, int accNo) {
             return 0;
         }
 
-        for (iter = 0; iter < MAX_TRANSACTIONS && account.transactions[iter] != -1; iter++) {
-            int offset = lseek(transFD, account.transactions[iter] * sizeof(struct Transaction), SEEK_SET);
+        for (i = 0; i < MAX_TRANSACTIONS && account.transactions[i] != -1; i++) {
+            int offset = lseek(transFD, account.transactions[i] * sizeof(struct Transaction), SEEK_SET);
             if (offset == -1) {
                 printf("Error while seeking to required transaction record!");
                 return 0;
@@ -299,7 +237,7 @@ int getTransactionDetails(int connFD, int accNo) {
 
             fcntl(transFD, F_SETLKW, &lock);
 
-            bytes = read(transFD, &transaction, sizeof(struct Transaction));
+            bytes = read(transFD, &trans, sizeof(struct Transaction));
             if (bytes == -1) {
                 printf("Error reading records from file!");
                 return 0;
@@ -307,11 +245,11 @@ int getTransactionDetails(int connFD, int accNo) {
 
             lock.l_type = F_UNLCK;
             fcntl(transFD, F_SETLK, &lock);
-            time_t temp = transaction.transactionTime;
+            time_t temp = trans.transactionTime;
             transactionTime = localtime(&temp);
 
             bzero(buffer, sizeof(buffer));
-            sprintf(buffer, "Details of transaction %d - \n\t Date : %d:%d %d/%d/%d \n Operation : %s \n Balance - \n\t Before : %ld \n\t After : %ld \n\t Difference : %ld\n", (iter + 1), transactionTime -> tm_hour, transactionTime -> tm_min, transactionTime -> tm_mday, transactionTime -> tm_mon, transactionTime -> tm_year, (transaction.operation == 1 ? "Deposit" : "Withdraw"), transaction.oldBalance, transaction.newBalance, (transaction.newBalance - transaction.oldBalance));
+            sprintf(buffer, "Details of transaction %d - \n\t Date : %d:%d %d/%d/%d \n Operation : %s \n Balance - \n\t Before : %ld \n\t After : %ld \n\t Difference : %ld\n", (i + 1), transactionTime -> tm_hour, transactionTime -> tm_min, transactionTime -> tm_mday, transactionTime -> tm_mon, transactionTime -> tm_year, (trans.operation == 1 ? "Deposit" : "Withdraw"), trans.oldBalance, trans.newBalance, (trans.newBalance - trans.oldBalance));
 
             if (strlen(outputBuffer) == 0)
                 strcpy(outputBuffer, buffer);
@@ -332,3 +270,82 @@ int getTransactionDetails(int connFD, int accNo) {
         }
     }
 }
+int loginHandler(int isAdmin, int connFD, struct Customer *ptrToCustomer) {
+    struct Customer customer;
+    char inputBuffer[SIZE], outputBuffer[SIZE], buffer[SIZE];
+    int custID, found = 0;
+
+    if (isAdmin == 1)
+        strcpy(outputBuffer, ADMIN_LOGIN_SUCCESS);
+    else
+        strcpy(outputBuffer, CUSTOMER_LOGIN_WELCOME_MESSAGE);
+
+    strcat(outputBuffer, "\n");
+    strcat(outputBuffer, USERNAME);
+    write(connFD, outputBuffer, strlen(outputBuffer));
+    read(connFD, inputBuffer, sizeof(inputBuffer));
+
+    if (isAdmin == 1) {
+        if (strcmp(inputBuffer, ADMIN_USERNAME) == 0)
+            found = 1;
+    } else {
+        strcpy(buffer, inputBuffer);
+        char* token = strtok(buffer, "-");
+        token = strtok(NULL, "-"); // strtok() stores the previous stored string as a static reference
+        custID = atoi(token);
+
+        int customerFD = open(CUSTOMER_FILE, O_RDONLY);
+        if (customerFD == -1) {
+            printf("Error opening customer file in read mode!");
+            return 0;
+        }
+
+        int offset = lseek(customerFD, custID * sizeof(struct Customer), SEEK_SET);
+        if (offset >= 0) {
+            struct flock lock;
+            lock.l_type = F_RDLCK;
+            lock.l_whence = SEEK_SET;
+            lock.l_start = custID * sizeof(struct Customer);
+            lock.l_len = sizeof(struct Customer);
+            lock.l_pid = getpid();
+
+            fcntl(customerFD, F_SETLKW, &lock);
+            read(customerFD, &customer, sizeof(struct Customer));
+
+            lock.l_type = F_UNLCK;
+            fcntl(customerFD, F_SETLK, &lock);
+
+            if (strcmp(customer.login, inputBuffer) == 0)
+                found = 1;
+            close(customerFD);
+        }
+        else {
+            write(connFD, CUSTOMER_LOGIN_ID_DOESNT_EXIST, strlen(CUSTOMER_LOGIN_ID_DOESNT_EXIST));
+        }
+    }
+
+    if (found == 1) {
+        write(connFD, PASSWORD, strlen(PASSWORD));
+
+        bzero(inputBuffer, sizeof(inputBuffer));
+        read(connFD, inputBuffer, sizeof(inputBuffer));
+
+        if (isAdmin == 1) {
+            if (strcmp(inputBuffer, ADMIN_PASSWORD) == 0)
+                return 1;
+        }
+        else {
+            if (strcmp(inputBuffer, customer.password) == 0) {
+                *ptrToCustomer = customer;
+                return 1;
+            }
+        }
+        write(connFD, INVALID_PASSWORD, strlen(INVALID_PASSWORD));
+    }
+    else {
+        write(connFD, INVALID_USERNAME, strlen(INVALID_USERNAME));
+    }
+
+    return 0;
+}
+

@@ -11,6 +11,7 @@
         "customer_struct.h": "c",
         "string.h": "c",
         "server-constants.h": "c",
-        "stat.h": "c"
+        "stat.h": "c",
+        "time.h": "c"
     }
 }
