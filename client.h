@@ -405,10 +405,10 @@ void adminLoginHandler(int connFD) {
                 addAccount(connFD);
                 break;
             case 4:
-                deleteAccount(connFD);
+                modifyCustomerInfo(connFD);
                 break;
             case 5:
-                modifyCustomerInfo(connFD);
+                deleteAccount(connFD);
                 break;
             case 6:
                 write(connFD, ADMIN_LOGOUT_MESSAGE, strlen(ADMIN_LOGOUT_MESSAGE));
@@ -719,10 +719,10 @@ void customerLoginHandler(int connFD) {
                     withdrawAmount(connFD, semID, loggedInCustomer);
                     break;
                 case 4:
-                    retreiveBalance(connFD, semID, loggedInCustomer);
+                    getTransactionDetails(connFD, loggedInCustomer.account);
                     break;
                 case 5:
-                    getTransactionDetails(connFD, loggedInCustomer.account);
+                    retreiveBalance(connFD, semID, loggedInCustomer);
                     break;
                 case 6:
                     changePassword(connFD, semID, loggedInCustomer);
