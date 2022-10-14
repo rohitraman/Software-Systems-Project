@@ -459,7 +459,7 @@ void retreiveBalance(int connFD, int semID, struct Customer loggedInCustomer) {
     account.accNo = loggedInCustomer.account;
     if (getAccountDetails(connFD, &account)) {
         if (account.active) {
-            sprintf(buffer, "You have ₹ %ld in your account!^", account.balance);
+            sprintf(buffer, BALANCE_DETAILS, account.balance);
             write(connFD, buffer, strlen(buffer));
         }
         else

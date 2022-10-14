@@ -58,7 +58,7 @@ void main() {
                     customerLoginHandler(nsd);
                     break;
                 case 3:
-                    write(nsd, "Exiting....$", strlen("Exiting....$"));
+                    write(nsd, EXIT_MESSAGE, strlen(EXIT_MESSAGE));
                     _exit(1);
                     break;
                 default:

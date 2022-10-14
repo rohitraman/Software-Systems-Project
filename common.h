@@ -101,7 +101,7 @@ int getAccountDetails(int connFD, struct Account *customerAccount) {
     }
 
     bzero(outputBuffer, sizeof(outputBuffer));
-    sprintf(outputBuffer, "Account Details - \nAccount Number : %d\nAccount Type : %s\nAccount Status : %s", account.accNo, (account.isRegularAccount ? "Regular" : "Joint"), (account.active) ? "Active" : "Deactivated");
+    sprintf(outputBuffer, ACCOUNT_DETAILS, account.accNo, (account.isRegularAccount ? "Regular" : "Joint"), (account.active) ? "Active" : "Deactivated");
     if (account.active == 1) {
         sprintf(buffer, "\nAccount Balance:₹ %ld", account.balance);
         strcat(outputBuffer, buffer);
@@ -178,9 +178,9 @@ int getCustomerDetails(int connFD, int custID) {
     fcntl(custFD, F_SETLK, &lock);
 
     bzero(outputBuffer, sizeof(outputBuffer));
-    sprintf(outputBuffer, "Customer Details - \nID : %d\nName : %s\nGender : %c\nAge: %d\nAccount Number : %d\nLoginID : %s", cust.id, cust.name, cust.gender, cust.age, cust.account, cust.login);
+    sprintf(outputBuffer, CUSTOMER_DETAILS, cust.id, cust.name, cust.gender, cust.age, cust.account, cust.login);
 
-    strcat(outputBuffer, "\n\nRedirecting to the main menu...^");
+    strcat(outputBuffer, "\n\nGoing to the main menu...^");
 
     write(connFD, outputBuffer, strlen(outputBuffer));
 
@@ -249,7 +249,7 @@ int getTransactionDetails(int connFD, int accNo) {
             transactionTime = localtime(&temp);
 
             bzero(buffer, sizeof(buffer));
-            sprintf(buffer, "Details of transaction %d - \n\t Date : %d:%d %d/%d/%d \n Operation : %s \n Balance - \n\t Before : %ld \n\t After : %ld \n\t Difference : %ld\n", (i + 1), transactionTime -> tm_hour, transactionTime -> tm_min, transactionTime -> tm_mday, transactionTime -> tm_mon, transactionTime -> tm_year, (trans.operation == 1 ? "Deposit" : "Withdraw"), trans.oldBalance, trans.newBalance, (trans.newBalance - trans.oldBalance));
+            sprintf(buffer, TRANSACTION_DETAILS, (i + 1), transactionTime -> tm_hour, transactionTime -> tm_min, transactionTime -> tm_mday, transactionTime -> tm_mon, transactionTime -> tm_year, (trans.operation == 1 ? "Deposit" : "Withdraw"), trans.oldBalance, trans.newBalance, (trans.newBalance - trans.oldBalance));
 
             if (strlen(outputBuffer) == 0)
                 strcpy(outputBuffer, buffer);
