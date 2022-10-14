@@ -321,6 +321,7 @@ int loginHandler(int isAdmin, int connFD, struct Customer *ptrToCustomer) {
         }
         else {
             write(connFD, CUSTOMER_LOGIN_ID_DOESNT_EXIST, strlen(CUSTOMER_LOGIN_ID_DOESNT_EXIST));
+            return 0;
         }
     }
 
@@ -341,9 +342,11 @@ int loginHandler(int isAdmin, int connFD, struct Customer *ptrToCustomer) {
             }
         }
         write(connFD, INVALID_PASSWORD, strlen(INVALID_PASSWORD));
+        return 0;
     }
     else {
         write(connFD, INVALID_USERNAME, strlen(INVALID_USERNAME));
+        return 0;
     }
 
     return 0;

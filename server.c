@@ -11,8 +11,7 @@
 #include <stdlib.h>
 
 #include "./constants.h"
-#include "./admin.h"
-#include "./customer.h"
+#include "./client.h"
 
 
 void main() {
@@ -49,7 +48,6 @@ void main() {
 
                 bzero(readBuffer, sizeof(readBuffer));
                 read(nsd, readBuffer, sizeof(readBuffer));
-
                 opt = atoi(readBuffer);
                 switch (opt)
                 {
