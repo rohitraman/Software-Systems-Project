@@ -17,7 +17,7 @@
 #define INVALID_MENU_CHOICE "Invalid menu choice\nGoing to the main menu.^"
 #define CUSTOMER_ID_DOESNT_EXIST "No customer could be found for the given ID.^"
 #define CUSTOMER_LOGIN_ID_DOESNT_EXIST "No customer could be found for the given username.^"
-#define ACCOUNT_ID_DOESNT_EXIT "This account does not exist.^"
+#define ACCOUNT_ID_DOESNT_EXIST "This account does not exist.^"
 #define TRANSACTIONS_NOT_FOUND "No transactions were performed on this account by the customer.^"
 #define ADMIN_LOGIN_SUCCESS "Welcome admin."
 #define ADMIN_MENU "1. Get Customer Details\n2. Get Account Details\n3. Create Account\n4. Delete Account\n5. Modify Customer Information\n6. Exit"

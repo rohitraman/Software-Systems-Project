@@ -66,7 +66,7 @@ int getAccountDetails(int connFD, struct Account *customerAccount) {
     int offset = lseek(accountFD, accNo * sizeof(struct Account), SEEK_SET);
     if (offset == -1 && errno == EINVAL) {
         bzero(outputBuffer, sizeof(outputBuffer));
-        strcpy(outputBuffer, ACCOUNT_ID_DOESNT_EXIT);
+        strcpy(outputBuffer, ACCOUNT_ID_DOESNT_EXIST);
         strcat(outputBuffer, "^");
         write(connFD, outputBuffer, strlen(outputBuffer));
         read(connFD, inputBuffer, sizeof(inputBuffer));

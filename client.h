@@ -144,7 +144,7 @@ void addAccount(int connFD) {
     bzero(inputBuffer, sizeof(inputBuffer));
     read(connFD, &inputBuffer, sizeof(inputBuffer));
     int opt = atoi(inputBuffer);
-    if (opt != 1 || opt != 2) {
+    if (opt != 1 && opt != 2) {
         write(connFD, ADMIN_CREATE_ACCOUNT_TYPE_WRONG, strlen(ADMIN_CREATE_ACCOUNT_TYPE_WRONG));
         return;
     }
@@ -200,7 +200,7 @@ void deleteAccount(int connFD) {
     int accountFD = open(ACCOUNT_FILE, O_RDONLY);
     if (accountFD == -1) {
         bzero(outputBuffer, sizeof(outputBuffer));
-        strcpy(outputBuffer, ACCOUNT_ID_DOESNT_EXIT);
+        strcpy(outputBuffer, ACCOUNT_ID_DOESNT_EXIST);
         write(connFD, outputBuffer, strlen(outputBuffer));
         read(connFD, inputBuffer, sizeof(inputBuffer));
         return;
@@ -209,7 +209,7 @@ void deleteAccount(int connFD) {
     int offset = lseek(accountFD, accountNumber * sizeof(struct Account), SEEK_SET);
     if (errno == EINVAL) {
         bzero(outputBuffer, sizeof(outputBuffer));
-        strcpy(outputBuffer, ACCOUNT_ID_DOESNT_EXIT);
+        strcpy(outputBuffer, ACCOUNT_ID_DOESNT_EXIST);
         write(connFD, outputBuffer, strlen(outputBuffer));
         read(connFD, inputBuffer, sizeof(inputBuffer));
         return;
