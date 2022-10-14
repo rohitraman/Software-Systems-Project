@@ -60,7 +60,7 @@ int addCustomer(int connFD, int isPrimary, int newAccNumber) {
     else {
         write(connFD, ADMIN_CREATE_CUSTOMER_WRONG_GENDER_MESSAGE, strlen(ADMIN_CREATE_CUSTOMER_WRONG_GENDER_MESSAGE));
         read(connFD, inputBuffer, sizeof(inputBuffer));
-        return 0;
+        return -1;
     }
 
     bzero(outputBuffer, sizeof(outputBuffer));
@@ -76,7 +76,7 @@ int addCustomer(int connFD, int isPrimary, int newAccNumber) {
         strcpy(outputBuffer, ERRON_INPUT_FOR_NUMBER);
         write(connFD, outputBuffer, strlen(outputBuffer));
         read(connFD, inputBuffer, sizeof(inputBuffer));
-        return 0;
+        return -1;
     }
     newCust.age = custAge;
 
@@ -92,12 +92,12 @@ int addCustomer(int connFD, int isPrimary, int newAccNumber) {
     customerFD = open(CUSTOMER_FILE, O_CREAT | O_APPEND | O_WRONLY, S_IRWXU);
     if (customerFD == -1) {
         printf("Error while creating / opening customer file!");
-        return 0;
+        return -1;
     }
     writeBytes = write(customerFD, &newCust, sizeof(newCust));
     if (writeBytes == -1) {
         printf("Error while writing customer record to file!");
-        return 0;
+        return -1;
     }
 
     close(customerFD);
@@ -143,15 +143,27 @@ void addAccount(int connFD) {
     write(connFD, ADMIN_CREATE_ACCOUNT_TYPE, strlen(ADMIN_CREATE_ACCOUNT_TYPE));
     bzero(inputBuffer, sizeof(inputBuffer));
     read(connFD, &inputBuffer, sizeof(inputBuffer));
-
-    newAcc.isRegularAccount = atoi(inputBuffer) == 1 ? 1 : 0;
+    int opt = atoi(inputBuffer);
+    if (opt != 1 || opt != 2) {
+        write(connFD, ADMIN_CREATE_ACCOUNT_TYPE_WRONG, strlen(ADMIN_CREATE_ACCOUNT_TYPE_WRONG));
+        return;
+    }
+    newAcc.isRegularAccount = opt == 1 ? 1 : 0;
 
     newAcc.customers[0] = addCustomer(connFD, 1, newAcc.accNo);
 
+    if (newAcc.customers[0] == -1) {
+        return;
+    }
+
     if (newAcc.isRegularAccount)
         newAcc.customers[1] = -1;
-    else
+    else {
         newAcc.customers[1] = addCustomer(connFD, 0, newAcc.accNo);
+        if (newAcc.customers[1] == -1) {
+            return;
+        }
+    }
 
     newAcc.active = 1;
     newAcc.balance = 0;
@@ -230,7 +242,11 @@ void deleteAccount(int connFD) {
         }
 
         offset = lseek(accountFD, accountNumber * sizeof(struct Account), SEEK_SET);
-
+        if (offset == -1) {
+            strcpy(outputBuffer, CUSTOMER_ID_DOESNT_EXIST);
+            write(connFD, outputBuffer, strlen(outputBuffer));
+            return;
+        }
         lock.l_type = F_WRLCK;
         lock.l_start = offset;
         fcntl(accountFD, F_SETLKW, &lock);
