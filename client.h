@@ -342,11 +342,6 @@ void modifyCustomerInfo(int connFD) {
             }
             customer.age = newAge;
             break;
-        case 3:
-            write(connFD, ADMIN_MODIFY_CUSTOMER_NEW_GENDER, strlen(ADMIN_MODIFY_CUSTOMER_NEW_GENDER));
-            read(connFD, &inputBuffer, sizeof(inputBuffer));
-            customer.gender = inputBuffer[0];
-            break;
         default:
             bzero(outputBuffer, sizeof(outputBuffer));
             strcpy(outputBuffer, INVALID_MENU_CHOICE);
