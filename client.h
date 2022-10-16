@@ -1,6 +1,6 @@
 #include <sys/ipc.h>
 #include <sys/sem.h>
-#include "./common.h"
+#include "./common_functions.h"
 
 union semun {
     int val;
@@ -457,10 +457,10 @@ int writeTransactionToFile(int accountNumber, long int oldBalance, long int newB
 
     int offset = lseek(transFD, -sizeof(struct Transaction), SEEK_END);
     if (offset >= 0) {
-        struct Transaction prevTransaction;
-        read(transFD, &prevTransaction, sizeof(struct Transaction));
+        struct Transaction prevTrans;
+        read(transFD, &prevTrans, sizeof(struct Transaction));
 
-        newTrans.transactionID = prevTransaction.transactionID + 1;
+        newTrans.transactionID = prevTrans.transactionID + 1;
     }
     else
         newTrans.transactionID = 0;

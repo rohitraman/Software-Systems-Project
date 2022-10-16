@@ -5,7 +5,7 @@
 #define ADMIN_PASSWORD "password"
 #define INITIAL_MESSAGE "Welcome.\nPlease select the option.\n1. Admin\t2. Customer\t3. Exit"
 #define SIZE 1000
-#define MAX_TRANSACTIONS 10
+#define MAX_TRANSACTIONS 5
 #define GEN_PASSWORD "bank"
 #define USERNAME "Enter your username:"
 #define PASSWORD "Enter your password \n# "
@@ -62,6 +62,6 @@
 #define WRONG_OPTION_SELECTED "Wrong option selected. Please select again."
 #define ACCOUNT_DETAILS "Account Details - \nAccount Number : %d\nAccount Type : %s\nAccount Status : %s"
 #define CUSTOMER_DETAILS "Customer Details - \nCustomer ID : %d\nName : %s\nGender : %c\nAge: %d\nAccount Number : %d\nLoginID : %s"
-#define TRANSACTION_DETAILS "Details of transaction %d - \n\t Date : %d:%d %d/%d/%d \n Operation : %s \n Balance - \n\t Before : %ld \n\t After : %ld \n\t Difference : %ld\n"
+#define TRANSACTION_DETAILS "Details of transaction %d - \n Date : %d:%d %d/%d/%d \n Type : %s \n Balance : %ld\n\n"
 #define BALANCE_DETAILS "You have ₹ %ld in your account!^"
 #define EXIT_MESSAGE "Exiting....$"
